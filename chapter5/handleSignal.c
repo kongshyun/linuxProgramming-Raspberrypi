@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	abort();
+	//abort();
 	kill (0,SIGINT);
 
 	if(signal ( SIGPIPE , SIG_IGN) == SIG_ERR) {
