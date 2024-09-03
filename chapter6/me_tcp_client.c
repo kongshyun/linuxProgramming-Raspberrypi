@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/wait.h>
 
 #define TCP_PORT 5100
 
@@ -11,6 +12,11 @@ int main(int argc, char **argv)
     int ssock;
     struct sockaddr_in servaddr;
     char mesg[BUFSIZ];
+//----------
+    pid_t pid;
+    int pfd[2];
+    int status;
+//----------
 
     if(argc <2){
         printf("Usage : %s IP_ADRESS\n",argv[0]);     
@@ -23,11 +29,30 @@ int main(int argc, char **argv)
     /*소켓이 접속할 주소 지정 */
     memset(&servaddr,0,sizeof(servaddr));
     servaddr.sin_family = AF_INET;
+    
+    if(pipe(pfd)<0){
+        perror("pipe()");
+        return -1;
+    }
+    if((pid=fork())<0){
+        perror("fork()");
+        return -1;
+    }
+    else if(pid==0)
+
+    do{
+        /*문자열을 네트워크 주소로 변경 */
+        inet_pton(AF_INET, argv[1],&(servaddr.sin_addr.s_addr));
+        servaddr.sin_port = htons(TCP_PORT);
+        if((pid=fork())<0){
+            perror("Error");
+        }else if(pid==0){
+        }
 
 
-    /*문자열을 네트워크 주소로 변경 */
-    inet_pton(AF_INET, argv[1],&(servaddr.sin_addr.s_addr));
-    servaddr.sin_port = htons(TCP_PORT);
+    }while(strncmp(mesg,"q",1));
+    
+
 
     /*지정한 주소로 접속*/
     if(connect(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
