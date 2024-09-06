@@ -3,21 +3,24 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <pthread.h>
+//#include <pthread.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <thread> // 추가 
 
-
-static void *clnt_connection(void *arg);
+void clnt_connection(int tid);
 int sendData(FILE * fp, char *ct, char *filename);
 void sendOk(FILE* fp);
 void sendError(FILE *fp);
 
+using namespace std;
+
 int main(int argc, char **argv)
 {
     int ssock;
-    pthread_t thread;
+    thread t; //추가 
+//    pthread_t thread;
     struct sockaddr_in servaddr, cliaddr;
     unsigned int len;
 
@@ -28,7 +31,6 @@ int main(int argc, char **argv)
     }
     ssock= socket(AF_INET,SOCK_STREAM,0);
     if(ssock==-1)
-
     {
         perror("socket()");
         return -1;
@@ -60,18 +62,18 @@ int main(int argc, char **argv)
         inet_ntop(AF_INET, &cliaddr.sin_addr,mesg,BUFSIZ);
         printf("Client IP : %s:%d\n",mesg, ntohs(cliaddr.sin_port));
 
-
-        pthread_create(&thread,NULL,clnt_connection, &csock);
-        pthread_detach(thread); // 추가!!!
-        usleep(10);
+        t = thread(clnt_connection,csock); //추가 
+        
+        t.detach();//추가
+//        usleep(10);
     }
     return 0;
 }
 
 
-void *clnt_connection(void *arg)
+void clnt_connection(int tid)
 {
-    int csock=*((int*)arg);
+    int csock=tid;
     FILE *clnt_read, *clnt_write;
     char reg_line[BUFSIZ], reg_buf[BUFSIZ];
     char method[BUFSIZ], type[BUFSIZ];
@@ -110,6 +112,7 @@ void *clnt_connection(void *arg)
         strcpy(reg_buf, reg_line);
         char *str = strchr(reg_buf, ':');
         char *tmp = strtok(reg_line," ");
+       // char *str = strchr(reg_buf, ':');
         if(strcmp(tmp,"Host:")==0){
             printf("--Host");
             while(1){
@@ -119,16 +122,13 @@ void *clnt_connection(void *arg)
                 printf(":%s",tmp);
             }
         }
-        
+    
     } while(strncmp (reg_line,"\r\n",2));
 
     sendData(clnt_write,type, filename);
-END: fclose(clnt_read);
-
+END: 
+     fclose(clnt_read);
      fclose(clnt_write);
-     pthread_exit(0);
-
-     return (void*)NULL;
 }
 
 int sendData(FILE* fp, char *ct, char *filename)
@@ -184,6 +184,3 @@ void sendError(FILE *fp){
     fputs(content2,fp);
     fflush(fp);
 }
-
-
-
