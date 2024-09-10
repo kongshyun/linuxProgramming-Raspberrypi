@@ -1,0 +1,5 @@
+v4l2_mmap_framebuffer.c
+ 컴파일 후 
+가상터미널 칠 명령어
+
+	LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libcamera/v4l2-compat.so ./v4l2_mmap_framebuffer
