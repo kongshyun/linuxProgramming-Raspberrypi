@@ -98,7 +98,7 @@ static void drawface(int fd, int start_x, int start_y, int end_x, int end_y, uby
 
             write(fd,&pixel,2); // 2byte
         
-        }
+        
     }
 }
 
