@@ -6,6 +6,13 @@
 
 #define TCP_PORT 5100
 
+//메세지 구조체 정의
+typedef struct {
+    char type[10];  //메세지 타입("LOGIN", "LOGOUT", "MSG")
+    char username[50];
+    char content[256];
+} Message;
+
 int main(int argc, char **argv)
 {
     int ssock;
@@ -14,6 +21,7 @@ int main(int argc, char **argv)
 
     if(argc <2){
         printf("Usage : %s IP_ADRESS\n",argv[0]);     
+        return -1;
     }
     /*소켓을 생성*/
     if((ssock=socket(AF_INET,SOCK_STREAM,0))<0){

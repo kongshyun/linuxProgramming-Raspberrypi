@@ -9,6 +9,19 @@
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 
+/*로그인 구조체*/
+typedef struct{
+    int sockfd;         //클라이언트 소켓 파일 디스크립터 
+    char username[50];  //클라이언트 사용자명
+    int is_logged_in;   // 로그인 상태(1:로그인, 2:로그아웃)
+}Client;
+
+/*메세지 구조체*/
+typedef struct {
+    int from_id;        // 발신자 클라이언트ID
+    char content[256];  // 메시지내용
+}Message;
+
 int main(int argc, char **argv)
 {
     int ssock;
@@ -39,7 +52,7 @@ int main(int argc, char **argv)
         return -1;
     }
     /*대기하는 클라이언트 숫자 설정. */
-    if(listen(ssock,10)==0){ // 수정 
+    if(listen(ssock,10)<0){ // 수정 
         perror("listen()");
         return -1;
     }
@@ -75,7 +88,7 @@ int main(int argc, char **argv)
         
         
         }
-        wait(&status); //세기님 추가 
+    //    wait(&status); //세기님 추가 
         close(csock);
     }while(strncmp(mesg,"q",1));
 
