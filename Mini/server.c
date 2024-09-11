@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <fcntl.h>// O_NONBLOCK 플래그를 사용하기 위한 헤더 파일
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 #define MAX_CLIENTS 10
@@ -48,14 +49,20 @@ void handle_sigchld(int signum){
     }
 }
 
-//파이프에서 메시지를 읽고 처리하는 함수 
+//파이프에서 메시지를 읽고 처리하는 함수  (논블로킹모드 -> 반복적으로 )
 void handle_pipe_read() {
     
     Message msg;
     //파이프에서 메시지를 반복적으로 읽어처리 
-    while(read(pipefd[0],&msg,sizeof(msg))>0){ //파이프에서 메시지를 읽기.
-        printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
-        broadcast_message(&msg,-1); //모든클라이언트에게 브로드캐스트
+    while(1){
+        int n=read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
+        if(n>0){
+            printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
+            broadcast_message(&msg,-1);
+        }else if(n ==-1){
+            //파이프에 읽은 데이터가 없을 경우, 루프를 빠젹나감.
+            break;
+        }
     }
 }
 
@@ -70,7 +77,6 @@ int main(int argc, char **argv)
     int ssock,csock;
     Message msg; //메시지 구조체 
     pid_t pid;
-    int n;
     struct sockaddr_in servaddr, cliaddr;/*주소 구조체 정의 */
     socklen_t clen=sizeof(cliaddr);  /*소켓 디스크립터 정의 */
 
@@ -88,7 +94,18 @@ int main(int argc, char **argv)
         return -1;
     }
 
-
+    //논블로킹 모드로 설정
+    int flags = fcntl(pipefd[0],F_GETFL,0);
+    if(flags ==-1 || fcntl(pipefd[0],F_SETFL,flags | O_NONBLOCK)==-1){
+        perror("fcntl()");
+        return -1;
+    }
+    // 쓰기 끝도 논블로킹으로 설정 (필요할 경우)
+    flags = fcntl(pipefd[1], F_GETFL, 0);
+    if (flags == -1 || fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK) == -1) {
+        perror("fcntl()");
+        return -1;
+    }
     /*주소 구조체에 주소 지정 */
     memset(&servaddr, 0,sizeof(servaddr));
     servaddr.sin_family=AF_INET;
@@ -125,7 +142,7 @@ int main(int argc, char **argv)
             //로그인 및 메시지 처리
             do{
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
-                n= recv(csock, &msg,sizeof(msg),0);
+                int n= recv(csock, &msg,sizeof(msg),0);
                 
                 if (n<=0){
                     if(n==0){
@@ -160,7 +177,7 @@ int main(int argc, char **argv)
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
-        handle_pipe_read();
+        handle_pipe_read();  // 부모프로세스는 파이프에서 메시지 읽기
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
 
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
