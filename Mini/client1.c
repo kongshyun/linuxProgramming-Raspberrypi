@@ -9,20 +9,23 @@
 //메세지 구조체 정의
 typedef struct {
     char type[10];  //메세지 타입("LOGIN", "LOGOUT", "MSG")
-    char username[50];
-    char content[256];
+    char username[50];  // 사용자 이름
+    char content[256];  // 메시지 내용
 } Message;
 
 int main(int argc, char **argv)
 {
     int ssock;
     struct sockaddr_in servaddr;
+    Message msg; //메시지 구조체 
+    char username[50]; // 사용자 이름 입력받을 변수 
     char mesg[BUFSIZ];
 
     if(argc <2){
         printf("Usage : %s IP_ADRESS\n",argv[0]);     
         return -1;
     }
+
     /*소켓을 생성*/
     if((ssock=socket(AF_INET,SOCK_STREAM,0))<0){
         perror("socket()");
@@ -42,28 +45,48 @@ int main(int argc, char **argv)
         perror("connect()");
         return -1;
     }
+    
+    printf("Enter your username: ");
+    fgets(username, sizeof(username),stdin);
+    username[strcspn(username,"\n")]=0; //개행 문제 제거 
 
-    fgets(mesg, BUFSIZ, stdin);
-    if(send (ssock, mesg, BUFSIZ, MSG_DONTWAIT)<=0) { /*데이터를 소켓에 쏨.*/
+    strcpy(msg.type,"LOGIN");
+    strcpy(msg.username, username);
+    if(send(ssock,&msg,sizeof(msg),0)<=0){
         perror("send()");
         return -1;
     }
 
-    shutdown(ssock,SHUT_WR); // 출력 소켓을 닫는다. 
+    while(1){
+        printf("Enter message (or 'q' to quit): ");
+        fgets(msg.content,sizeof(msg.content),stdin);
+        msg.content[strcspn(msg.content,"\n")]=0; //개행 문자 제거
+        
+        // 종료 조건
+        if (strcmp(msg.content, "q") == 0) {
+            break;
+        }
 
-    /*데이터를 소켓으로부터 읽음.*/
-    memset(mesg, 0, BUFSIZ);
-    if (recv(ssock,mesg,BUFSIZ,0) <=0){
-        perror("recv()");
-        return -1;
+        // 일반 메시지 전송
+        strcpy(msg.type, "MSG");
+        if (send(ssock, &msg, sizeof(msg), 0) <= 0) {
+            perror("send()");
+            return -1;
+        }
+
+        // 서버로부터 응답 수신
+        if (recv(ssock, &msg, sizeof(msg), 0) <= 0) {
+            perror("recv()");
+            return -1;
+        }
+
+        // 받은 메시지 출력
+        printf("[%s]: %s\n", msg.username, msg.content);
+        
+
     }
-    
-    shutdown(ssock,SHUT_RD); // 입력소켓을닫는다.
-    /*받은 문자열을 화면에 출력 */
-    printf("Received data : %s ", mesg);
 
-
+    //소켓 종료 
     close(ssock);
-
     return 0;
 }
