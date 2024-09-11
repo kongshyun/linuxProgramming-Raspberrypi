@@ -38,26 +38,34 @@ void broadcast_message(Message *msg, int sender_sock) {
     }
 }
 
+//자식 프로세스가 종료되었을때 처리
+void handle_sigchld(int signum){
+    int status;
+    pid_t pid;
+
+    while((pid=waitpid(-1, &status, WNOHANG))>0){
+        printf("Child process with PID %d terminated.\n", pid);
+    }
+}
+
+//파이프에서 메시지를 읽고 처리하는 함수 
 void handle_pipe_read() {
     
     Message msg;
-    read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
-    printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
-    broadcast_message(&msg,-1); //모든클라이언트에게 브로드캐스트
-
+    //파이프에서 메시지를 반복적으로 읽어처리 
+    while(read(pipefd[0],&msg,sizeof(msg))>0){ //파이프에서 메시지를 읽기.
+        printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
+        broadcast_message(&msg,-1); //모든클라이언트에게 브로드캐스트
+    }
 }
 
-//시그널 
-void sigusr1_handler(int signum){
-    printf("Received SIGUSR1 from child process.\n");
-}
 
 
 
 int main(int argc, char **argv)
 {
     //SIGUSR1 핸들러 설정
-    signal(SIGUSR1,sigusr1_handler);
+    signal(SIGCHLD,handle_sigchld);
     
     int ssock,csock;
     Message msg; //메시지 구조체 
@@ -127,13 +135,19 @@ int main(int argc, char **argv)
                     }
                     break;
                 }
+                if(strcmp(msg.content,"q")==0){
+                    //클라이언트가 'q'
+                    printf("%s has logout(q) the chat.\n",msg.username);
+                    break;
+                }
                 if(strcmp(msg.type,"LOGIN")==0){
                     //클라이언트 로그인 처리
-                    printf("%s logged in.\n",msg.username);
+                    printf("[%s] logged in.\n",msg.username);
                     clients[client_count].sockfd = csock;
                     strcpy(clients[client_count].username, msg.username);
                     client_count++;
                 } else if(strcmp(msg.type, "MSG")==0){
+
                     write(pipefd[1],&msg,sizeof(msg)); //파이프로 부모에게 메시지 전송
                     //서버가 받은 메시지를 클라이언트에게 다시 돌려보냄.
                     if(send(csock,&msg,sizeof(msg),0)<=0){
