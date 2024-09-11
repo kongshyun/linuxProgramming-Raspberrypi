@@ -16,6 +16,7 @@
 typedef struct{
     int sockfd;         //클라이언트 소켓 파일 디스크립터
     char username[50];  //클라이언트 이름
+    pid_t pid; // 클라이언트 프로세스 ID 
 }Client;
 
 Client clients[MAX_CLIENTS]; //클라이언트 리스트
@@ -35,7 +36,9 @@ int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝
 void broadcast_message(Message *msg, int sender_sock) {
     for (int i = 0; i < client_count; i++) {
         if (clients[i].sockfd != sender_sock) {
-            send(clients[i].sockfd, msg, sizeof(*msg), 0);
+            char message_with_id[300];
+            snprintf(message_with_id,sizeof(message_with_id),"[%s] : %s", msg->username, msg->content);
+            send(clients[i].sockfd, message_with_id,strlen(message_with_id),0);
         }
     }
 }
@@ -188,6 +191,7 @@ int main(int argc, char **argv)
                     //클라이언트 로그인 처리
                     printf("[%s] logged in.\n",msg.username);
                     clients[client_count].sockfd = csock;
+                    clients[client_count].pid=getpid(); //프로세스ID 
                     strcpy(clients[client_count].username, msg.username);
                     client_count++;
                 } else if(strcmp(msg.type, "MSG")==0){
