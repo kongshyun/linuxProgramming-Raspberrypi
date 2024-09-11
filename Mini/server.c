@@ -20,6 +20,7 @@ typedef struct{
 
 Client clients[MAX_CLIENTS]; //클라이언트 리스트
 int client_count =0;
+int running_children=0; // 실행중인 자식 프로세스 수
 
 //메시지 구조체
 typedef struct{
@@ -45,7 +46,16 @@ void handle_sigchld(int signum){
     pid_t pid;
 
     while((pid=waitpid(-1, &status, WNOHANG))>0){
-        printf("Child process with PID %d terminated.\n", pid);
+        running_children--; // 자식프로세스 수 감소 
+        printf("Child process PID %d :죽음, (남은자식수 : %d)\n", pid,running_children);
+
+        //남은 자식이 없으면 부모도 종료 
+        if(running_children ==0){
+            printf("All child process terminated, Shutdown server.\n");
+            close(pipefd[0]);
+            close(pipefd[1]);
+            exit(0);
+        }
     }
 }
 
@@ -53,11 +63,12 @@ void handle_sigchld(int signum){
 void handle_pipe_read() {
     
     Message msg;
+    int n;
     //파이프에서 메시지를 반복적으로 읽어처리 
     while(1){
-        int n=read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
+        n=read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
         if(n>0){
-            printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
+            printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
             broadcast_message(&msg,-1);
         }else if(n ==-1){
             //파이프에 읽은 데이터가 없을 경우, 루프를 빠젹나감.
@@ -65,6 +76,7 @@ void handle_pipe_read() {
         }
     }
 }
+
 
 
 
@@ -95,6 +107,7 @@ int main(int argc, char **argv)
     }
 
     //논블로킹 모드로 설정
+
     int flags = fcntl(pipefd[0],F_GETFL,0);
     if(flags ==-1 || fcntl(pipefd[0],F_SETFL,flags | O_NONBLOCK)==-1){
         perror("fcntl()");
@@ -115,6 +128,8 @@ int main(int argc, char **argv)
 
     if(bind(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
         perror("bind()");
+
+
         return -1;
     }
     /*대기하는 클라이언트 숫자 설정. */
@@ -126,9 +141,14 @@ int main(int argc, char **argv)
     printf("Server is listening on port %d\n",TCP_PORT);
 
     do {
+
+        //이전에 남아있는 파이프 메시지 모두 처리
+        handle_pipe_read();
+
         //클라이언트 연결 수락 
         csock = accept(ssock,(struct sockaddr *)&cliaddr, &clen);
         if(csock<0){
+
             perror("accept()");
             continue;
         }
@@ -144,6 +164,12 @@ int main(int argc, char **argv)
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
                 int n= recv(csock, &msg,sizeof(msg),0);
                 
+                //디버깅용 로그 추가
+                //printf("Message received from client\n");
+
+                printf(" content : %s\n",msg.content);
+
+
                 if (n<=0){
                     if(n==0){
                         printf("Client disconnected.\n");
@@ -157,6 +183,7 @@ int main(int argc, char **argv)
                     printf("%s has logout(q) the chat.\n",msg.username);
                     break;
                 }
+
                 if(strcmp(msg.type,"LOGIN")==0){
                     //클라이언트 로그인 처리
                     printf("[%s] logged in.\n",msg.username);
@@ -164,8 +191,13 @@ int main(int argc, char **argv)
                     strcpy(clients[client_count].username, msg.username);
                     client_count++;
                 } else if(strcmp(msg.type, "MSG")==0){
-
-                    write(pipefd[1],&msg,sizeof(msg)); //파이프로 부모에게 메시지 전송
+                    int bytes_written = write(pipefd[1],&msg,sizeof(msg));
+                    if(bytes_written<=0){
+                        perror("write()");
+                    }
+                    //else {
+                    //    printf("Message written to pipe. Bytes: %d\n", bytes_written);
+                    //}    
                     //서버가 받은 메시지를 클라이언트에게 다시 돌려보냄.
                     if(send(csock,&msg,sizeof(msg),0)<=0){
                         perror("send()");
@@ -177,7 +209,10 @@ int main(int argc, char **argv)
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
-        handle_pipe_read();  // 부모프로세스는 파이프에서 메시지 읽기
+        running_children++;  // 실행 중인 자식 프로세스 수 증가
+        printf("New client connected. Current running children: %d\n", running_children);
+        //printf("Parent process is checking the pipe for new message.\n");
+        //handle_pipe_read();  // 부모프로세스는 파이프에서 메시지 읽기
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
 
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
