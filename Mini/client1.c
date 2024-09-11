@@ -19,7 +19,6 @@ int main(int argc, char **argv)
     struct sockaddr_in servaddr;
     Message msg; //메시지 구조체 
     char username[50]; // 사용자 이름 입력받을 변수 
-    //char mesg[BUFSIZ];
 
     if(argc <2){
         printf("Usage : %s IP_ADRESS\n",argv[0]);     

@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 #define MAX_CLIENTS 10
@@ -26,7 +27,7 @@ typedef struct{
     char content[256];//메시지 내용 
 }Message;
 
-
+int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝 
 
 
 void broadcast_message(Message *msg, int sender_sock) {
@@ -37,8 +38,27 @@ void broadcast_message(Message *msg, int sender_sock) {
     }
 }
 
+void handle_pipe_read() {
+    
+    Message msg;
+    read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
+    printf("[PARENT PROCESS] Received message from child: [%s]: %s\n",msg.username, msg.content);
+    broadcast_message(&msg,-1); //모든클라이언트에게 브로드캐스트
+
+}
+
+//시그널 
+void sigusr1_handler(int signum){
+    printf("Received SIGUSR1 from child process.\n");
+}
+
+
+
 int main(int argc, char **argv)
 {
+    //SIGUSR1 핸들러 설정
+    signal(SIGUSR1,sigusr1_handler);
+    
     int ssock,csock;
     Message msg; //메시지 구조체 
     pid_t pid;
@@ -46,16 +66,20 @@ int main(int argc, char **argv)
     struct sockaddr_in servaddr, cliaddr;/*주소 구조체 정의 */
     socklen_t clen=sizeof(cliaddr);  /*소켓 디스크립터 정의 */
 
-
-    //char mesg[BUFSIZ]; 
-//    int status;
     /*서버 소켓 생성*/
     if((ssock = socket(AF_INET, SOCK_STREAM,0))<0) {
         perror("socket()");
         return -1;
     }
-    
+        
     printf("Server Socket is created.! \n");
+
+    //파이프 생성
+    if (pipe(pipefd)==-1){
+        perror("pipe()");
+        return -1;
+    }
+
 
     /*주소 구조체에 주소 지정 */
     memset(&servaddr, 0,sizeof(servaddr));
@@ -83,15 +107,13 @@ int main(int argc, char **argv)
             perror("accept()");
             continue;
         }
-        //inet_ntop(AF_INET, &cliaddr.sin_addr,mesg,BUFSIZ);
-        //printf("Client is connected : %s\n",mesg);
 
-        /*자식프로세스 생성 */
+        //자식프로세스 생성 
         if((pid=fork())<0){
             perror("Error");
         
         }else if (pid==0){
-            close(ssock); /*서버 소켓을 닫음*/  
+            close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
             //로그인 및 메시지 처리
             do{
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
@@ -112,12 +134,9 @@ int main(int argc, char **argv)
                     strcpy(clients[client_count].username, msg.username);
                     client_count++;
                 } else if(strcmp(msg.type, "MSG")==0){
-                    //메시지 브로드캐스트
-                    printf("[%s]: %s\n",msg.username, msg.content);
-                    broadcast_message(&msg, csock);
-                
+                    write(pipefd[1],&msg,sizeof(msg)); //파이프로 부모에게 메시지 전송
                     //서버가 받은 메시지를 클라이언트에게 다시 돌려보냄.
-                    if(send(csock, &msg, sizeof(msg),0)<=0){
+                    if(send(csock,&msg,sizeof(msg),0)<=0){
                         perror("send()");
                         break;
                     }
@@ -127,8 +146,11 @@ int main(int argc, char **argv)
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
+        handle_pipe_read();
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
-    }while(1);//종료조건 없이 계속 실행, 서버가 종료되기 전가지 클라이언트연결수락
+
+    }while(1); //서버가 종료되기 전가지 클라이언트연결수락
+    
 
     close(ssock);/*서버 소켓을 닫음 */
     return 0;
