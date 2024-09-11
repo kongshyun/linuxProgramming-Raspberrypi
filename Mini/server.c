@@ -46,7 +46,8 @@ int main(int argc, char **argv)
     struct sockaddr_in servaddr, cliaddr;/*주소 구조체 정의 */
     socklen_t clen=sizeof(cliaddr);  /*소켓 디스크립터 정의 */
 
-    char mesg[BUFSIZ]; 
+
+    //char mesg[BUFSIZ]; 
 //    int status;
     /*서버 소켓 생성*/
     if((ssock = socket(AF_INET, SOCK_STREAM,0))<0) {
@@ -62,6 +63,7 @@ int main(int argc, char **argv)
     servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
     servaddr.sin_port = htons(TCP_PORT);
 
+
     if(bind(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
         perror("bind()");
         return -1;
@@ -75,21 +77,26 @@ int main(int argc, char **argv)
     printf("Server is listening on port %d\n",TCP_PORT);
 
     do {
+        //클라이언트 연결 수락 
         csock = accept(ssock,(struct sockaddr *)&cliaddr, &clen);
-        /*클라이언트를 문자열로 변경 */
-        
-        inet_ntop(AF_INET, &cliaddr.sin_addr,mesg,BUFSIZ);
-        printf("Client is connected : %s\n",mesg);
+        if(csock<0){
+            perror("accept()");
+            continue;
+        }
+        //inet_ntop(AF_INET, &cliaddr.sin_addr,mesg,BUFSIZ);
+        //printf("Client is connected : %s\n",mesg);
+
         /*자식프로세스 생성 */
         if((pid=fork())<0){
             perror("Error");
         
         }else if (pid==0){
             close(ssock); /*서버 소켓을 닫음*/  
+            //로그인 및 메시지 처리
             do{
-                //memset(mesg,0,BUFSIZ);
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
                 n= recv(csock, &msg,sizeof(msg),0);
+                
                 if (n<=0){
                     if(n==0){
                         printf("Client disconnected.\n");
@@ -108,30 +115,15 @@ int main(int argc, char **argv)
                     //메시지 브로드캐스트
                     printf("[%s]: %s\n",msg.username, msg.content);
                     broadcast_message(&msg, csock);
-                }
+                
+                    //서버가 받은 메시지를 클라이언트에게 다시 돌려보냄.
+                    if(send(csock, &msg, sizeof(msg),0)<=0){
+                        perror("send()");
+                        break;
+                    }
+                }   
             }while(1); //종료 조건이 발생할 때까지 루프
 
-    /*
-
-                if ((n=read(csock, mesg, BUFSIZ))<=0) {
-                    perror("read()");
-                    break;
-                }
-                printf("Received data : %s",mesg);
-                
-                //종료조건 추가
-                if(strncmp(mesg,"q",1)==0){
-                    printf("Client requested to close connection.\n");
-                    break;
-                }
-
-                //클라이언트로 buf에 있는 문자열 전송 
-                if(write(csock, mesg, n) <=0){
-                    perror("write()");
-                    break; // 오류발생시 루프 종료 
-                }
-            } while(1);
-    */
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }

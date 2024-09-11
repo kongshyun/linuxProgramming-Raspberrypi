@@ -19,7 +19,7 @@ int main(int argc, char **argv)
     struct sockaddr_in servaddr;
     Message msg; //메시지 구조체 
     char username[50]; // 사용자 이름 입력받을 변수 
-    char mesg[BUFSIZ];
+    //char mesg[BUFSIZ];
 
     if(argc <2){
         printf("Usage : %s IP_ADRESS\n",argv[0]);     
@@ -40,16 +40,18 @@ int main(int argc, char **argv)
     inet_pton(AF_INET, argv[1],&(servaddr.sin_addr.s_addr));
     servaddr.sin_port = htons(TCP_PORT);
 
-    /*지정한 주소로 접속*/
+    /*서버에 연결*/
     if(connect(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
         perror("connect()");
         return -1;
     }
     
+    //로그인요청: 사용자 이름 입력
     printf("Enter your username: ");
     fgets(username, sizeof(username),stdin);
     username[strcspn(username,"\n")]=0; //개행 문제 제거 
-
+    
+    //로그인 메시지 전송 
     strcpy(msg.type,"LOGIN");
     strcpy(msg.username, username);
     if(send(ssock,&msg,sizeof(msg),0)<=0){
@@ -57,7 +59,9 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    //메시지 송수신 루프
     while(1){
+        //메시지 입력 
         printf("Enter message (or 'q' to quit): ");
         fgets(msg.content,sizeof(msg.content),stdin);
         msg.content[strcspn(msg.content,"\n")]=0; //개행 문자 제거
