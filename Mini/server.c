@@ -50,7 +50,7 @@ void handle_sigchld(int signum){
 
     while((pid=waitpid(-1, &status, WNOHANG))>0){
         running_children--; // 자식프로세스 수 감소 
-        printf("Child process PID %d :죽음, (남은자식수 : %d)\n", pid,running_children);
+        printf("Child process PID %d : 종료, (남은자식: %d)\n", pid,running_children);
 
         //남은 자식이 없으면 부모도 종료 
         if(running_children ==0){
@@ -167,12 +167,6 @@ int main(int argc, char **argv)
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
                 int n= recv(csock, &msg,sizeof(msg),0);
                 
-                //디버깅용 로그 추가
-                //printf("Message received from client\n");
-
-//                printf(" content : %s\n",msg.content);
-
-                printf(" Message from [%s] : %s\n",msg.username,msg.content);
 
                 if (n<=0){
                     if(n==0){
@@ -190,20 +184,18 @@ int main(int argc, char **argv)
 
                 if(strcmp(msg.type,"LOGIN")==0){
                     //클라이언트 로그인 처리
-                    printf("[%s] logged in.\n",msg.username);
+                    printf("▷ [%s] 님이 로그인\n",msg.username);
                     clients[client_count].sockfd = csock;
                     clients[client_count].pid=getpid(); //프로세스ID 
                     strcpy(clients[client_count].username, msg.username);
                     client_count++;
-                } else if(strcmp(msg.type, "MSG")==0){
+                }
+                if(strcmp(msg.type, "MSG")==0){
                     int bytes_written = write(pipefd[1],&msg,sizeof(msg));
+                    printf(" Message from [%s] : %s\n",msg.username,msg.content);
                     if(bytes_written<=0){
                         perror("write()");
                     }
-                    //else {
-                    //    printf("Message written to pipe. Bytes: %d\n", bytes_written);
-                    //}    
-                    //서버가 받은 메시지를 클라이언트에게 다시 돌려보냄.
                     if(send(csock,&msg,sizeof(msg),0)<=0){
                         perror("send()");
                         break;
