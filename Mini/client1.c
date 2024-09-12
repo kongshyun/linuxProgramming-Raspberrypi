@@ -3,9 +3,12 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <fcntl.h> // 비동기 I/O를 위한 헤더 
+#include <errno.h>
+
 
 #define TCP_PORT 5100
-
+                                                                              
 //메세지 구조체 정의
 typedef struct {
     char type[10];  //메세지 타입("LOGIN", "LOGOUT", "MSG")
@@ -25,21 +28,21 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    /*소켓을 생성*/
+    //소켓을 생성
     if((ssock=socket(AF_INET,SOCK_STREAM,0))<0){
         perror("socket()");
         return -1;
     }
-    /*소켓이 접속할 주소 지정 */
+    //소켓이 접속할 주소 지정
     memset(&servaddr,0,sizeof(servaddr));
     servaddr.sin_family = AF_INET;
 
 
-    /*문자열을 네트워크 주소로 변경 */
+    //문자열을 네트워크 주소로 변경
     inet_pton(AF_INET, argv[1],&(servaddr.sin_addr.s_addr));
     servaddr.sin_port = htons(TCP_PORT);
 
-    /*서버에 연결*/
+    //서버에 연결
     if(connect(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
         perror("connect()");
         return -1;
@@ -57,11 +60,16 @@ int main(int argc, char **argv)
         perror("send()");
         return -1;
     }
+    
+    //비동기 I/O 설정( non-blocking mode )
+    int flags=fcntl(ssock, F_GETFL,0);
+    fcntl(ssock, F_SETFL,flags | O_NONBLOCK);
+
 
     //메시지 송수신 루프
     while(1){
         //메시지 입력 
-        printf("Enter message (or 'q' to quit): ");
+        printf("Enter message (exit 'q'): ");
         fgets(msg.content,sizeof(msg.content),stdin);
         msg.content[strcspn(msg.content,"\n")]=0; //개행 문자 제거
         
@@ -75,16 +83,17 @@ int main(int argc, char **argv)
         if (send(ssock, &msg, sizeof(msg), 0) <= 0) {
             perror("send()");
             return -1;
-        }
-
-        // 서버로부터 응답 수신
-        if (recv(ssock, &msg, sizeof(msg), 0) <= 0) {
-            perror("recv()");
-            return -1;
-        }
-
+                                                                                      }
         // 받은 메시지 출력
-        printf("[%s]: %s\n", msg.username, msg.content);
+        while(recv(ssock, &msg, sizeof(msg),0)>0){ //[13차 11:05]while문으로 수정!
+            printf("[%s]: %s\n", msg.username, msg.content);
+        }
+
+        //수신중 에러발생시
+        if(errno != EWOULDBLOCK && errno !=EAGAIN){
+            perror("recv()");
+            break;
+        }
         
 
     }

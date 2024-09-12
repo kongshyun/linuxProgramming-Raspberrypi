@@ -36,9 +36,10 @@ int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝
 void broadcast_message(Message *msg, int sender_sock) {
     for (int i = 0; i < client_count; i++) {
         if (clients[i].sockfd != sender_sock) {
-            char message_with_id[300];
-            snprintf(message_with_id,sizeof(message_with_id),"[%s] : %s", msg->username, msg->content);
-            send(clients[i].sockfd, message_with_id,strlen(message_with_id),0);
+            printf("부모 -클라이언트에게로  브로드캐스팅 메시지[%d]\n ",clients[i].sockfd);
+            if(send(clients[i].sockfd,msg,sizeof(*msg),0)<=0){
+                perror("send()");
+            }
         }
     }
 }
@@ -67,6 +68,7 @@ void handle_pipe_read() {
     
     Message msg;
     int n;
+
     //파이프에서 메시지를 반복적으로 읽어처리 
     while(1){
         n=read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
@@ -191,15 +193,16 @@ int main(int argc, char **argv)
                     client_count++;
                 }
                 if(strcmp(msg.type, "MSG")==0){
-                    int bytes_written = write(pipefd[1],&msg,sizeof(msg));
-                    printf(" Message from [%s] : %s\n",msg.username,msg.content);
+                    int bytes_written = write(pipefd[1],&msg,sizeof(msg)); // 부모프로세스에 메시지 전송
+                    printf(" → Message [%s] : %s\n",msg.username,msg.content);
                     if(bytes_written<=0){
                         perror("write()");
                     }
-                    if(send(csock,&msg,sizeof(msg),0)<=0){
-                        perror("send()");
-                        break;
-                    }
+
+                    //if(send(csock,&msg,sizeof(msg),0)<=0){
+                    //    perror("send()");
+                    //    break;
+                    //}
                 }   
             }while(1); //종료 조건이 발생할 때까지 루프
 
