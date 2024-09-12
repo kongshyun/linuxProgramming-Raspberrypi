@@ -171,10 +171,6 @@ int main(int argc, char **argv)
     setup_pipes();
     setup_nonblocking_pipes();
     do {
-
-        //이전에 남아있는 파이프 메시지 모두 처리
-        //handle_pipe_read();
-
         //클라이언트 연결 수락 
         csock = accept(ssock,(struct sockaddr *)&cliaddr, &clen);
         if(csock<0){
@@ -241,10 +237,10 @@ int main(int argc, char **argv)
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
         
         //부모는 파이프에서 메시지 읽기
-        handle_pipe_read();
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
     
 
+    handle_pipe_read();
     close(ssock);/*서버 소켓을 닫음 */
     return 0;
 }
