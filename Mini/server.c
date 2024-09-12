@@ -170,8 +170,9 @@ int main(int argc, char **argv)
                 //디버깅용 로그 추가
                 //printf("Message received from client\n");
 
-                printf(" content : %s\n",msg.content);
+//                printf(" content : %s\n",msg.content);
 
+                printf(" Message from [%s] : %s\n",msg.username,msg.content);
 
                 if (n<=0){
                     if(n==0){
