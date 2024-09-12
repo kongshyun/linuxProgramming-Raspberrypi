@@ -31,7 +31,7 @@ typedef struct{
 }Message;
 
 
-int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝 
+//int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝 
 int pipe1[MAX_CLIENTS][2]; //자식 -> 부모 
 int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
@@ -44,6 +44,29 @@ void setup_pipes(){
         }
     }
 }
+
+void set_nonblocking_pipe(int pipefd[2]){
+    int flags;
+    flags = fcntl(pipefd[0],F_GETFL,0);
+    if(flags ==-1 ||fcntl(pipefd[0],F_SETFL,flags | O_NONBLOCK)== -1){
+        perror("fcntl() for read end of pipe");
+        exit(1);
+    }
+    flags = fcntl(pipefd[1],F_GETFL,0);
+    if(flags == -1 || fcntl(pipefd[1],F_SETFL, flags | O_NONBLOCK)==-1){
+        perror("fcntl() for write end of pipe");
+        exit(1);
+    }
+    
+}
+
+void setup_nonblocking_pipes(){
+    for(int i=0;i<MAX_CLIENTS;i++){
+        set_nonblocking_pipe(pipe1[i]);
+        set_nonblocking_pipe(pipe2[i]);
+    }
+}
+
 
 void broadcast_message(Message *msg) {
     for (int i = 0; i < client_count; i++) {
@@ -96,6 +119,8 @@ void handle_pipe_read() {
                 printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
                 broadcast_message(&msg);
         
+            }else if(n==-1){
+                perror("read() from pipe1");
             }
         }
     }
@@ -122,27 +147,6 @@ int main(int argc, char **argv)
     }
         
     printf("Server Socket is created.! \n");
-/*
-    //파이프 생성
-    if (pipe(pipefd)==-1){
-        perror("pipe()");
-        return -1;
-    }
-
-    //논블로킹 모드로 설정
-
-    int flags = fcntl(pipefd[0],F_GETFL,0);
-    if(flags ==-1 || fcntl(pipefd[0],F_SETFL,flags | O_NONBLOCK)==-1){
-        perror("fcntl()");
-        return -1;
-    }
-    // 쓰기 끝도 논블로킹으로 설정 (필요할 경우)
-    flags = fcntl(pipefd[1], F_GETFL, 0);
-    if (flags == -1 || fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK) == -1) {
-        perror("fcntl()");
-        return -1;
-    }
-*/
 
     /*주소 구조체에 주소 지정 */
     memset(&servaddr, 0,sizeof(servaddr));
@@ -162,10 +166,10 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    printf("Server is listening on port %d\n",TCP_PORT);
+    printf("서버가 포트 %d에서 대기 중...\n",TCP_PORT);
 
     setup_pipes();
-
+    setup_nonblocking_pipes();
     do {
 
         //이전에 남아있는 파이프 메시지 모두 처리
@@ -217,20 +221,14 @@ int main(int argc, char **argv)
                     client_count++;
                 }
                 if(strcmp(msg.type, "MSG")==0){
-
+                    printf("[CHILD] Sending message to parent: [%s]: %s\n", msg.username, msg.content);
                     //부모 프로세스로 메시지 전송
-                    if(write(pipefd[1],&msg,sizeof(msg))==-1){
-                        perror("write()");
+                    if(write(pipe1[process_index][1],&msg,sizeof(msg))==-1){
+                        perror("write() to parent");
                     }
-                    //int bytes_written = write(pipefd[1],&msg,sizeof(msg)); // 부모프로세스에 메시지 전송
-                    //printf(" → Message [%s] : %s\n",msg.username,msg.content);
-                    //if(bytes_written<=0){
-                    //    perror("write()");
-                    //}
-                    
                     //부모로부터 메시지 수신
                     if(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
-                        printf(" → Message [%s] : %s\n",msg.username,msg.content);
+                        printf(" → Recieved from parent [%s] : %s\n",msg.username,msg.content);
                     }
                 }   
             }while(1); //종료 조건이 발생할 때까지 루프
@@ -240,10 +238,10 @@ int main(int argc, char **argv)
         }
         running_children++;  // 실행 중인 자식 프로세스 수 증가
         printf("New client connected. Current running children: %d\n", running_children);
-        //printf("Parent process is checking the pipe for new message.\n");
-        //handle_pipe_read();  // 부모프로세스는 파이프에서 메시지 읽기
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
-
+        
+        //부모는 파이프에서 메시지 읽기
+        handle_pipe_read();
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
     
 
