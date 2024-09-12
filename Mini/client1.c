@@ -83,7 +83,8 @@ int main(int argc, char **argv)
         if (send(ssock, &msg, sizeof(msg), 0) <= 0) {
             perror("send()");
             return -1;
-                                                                                      }
+        }
+        /*
         // 받은 메시지 출력
         while(recv(ssock, &msg, sizeof(msg),0)>0){ //[13차 11:05]while문으로 수정!
             printf("[%s]: %s\n", msg.username, msg.content);
@@ -93,8 +94,18 @@ int main(int argc, char **argv)
         if(errno != EWOULDBLOCK && errno !=EAGAIN){
             perror("recv()");
             break;
-        }
-        
+        }*/
+        while(1){
+            int bytes_received=recv(ssock, &msg,sizeof(msg),0);
+            if(bytes_received>0){
+                printf("[%s] : %s\n",msg.username, msg.content);
+            }else if( bytes_received == -1 && (errno == EWOULDBLOCK || errno ==EAGAIN) ){
+                break;
+            }else if(bytes_received <=0){
+                perror("recv()");
+                return -1;
+            }
+        }        
 
     }
 

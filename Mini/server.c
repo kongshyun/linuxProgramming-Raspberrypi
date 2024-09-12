@@ -111,9 +111,9 @@ void handle_pipe_read() {
                 printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
                 broadcast_message(&msg,i);
         
-            }else if(n==-1){
-                perror("read() from pipe1");
-            }
+            }//else if(n==-1){
+             //   perror("read() from pipe1");
+             //}
         }
     }
 }
