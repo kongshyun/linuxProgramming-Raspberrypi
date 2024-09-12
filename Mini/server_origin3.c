@@ -66,17 +66,66 @@ void setup_nonblocking_pipes(){
         set_nonblocking_pipe(pipe2[i]);
     }
 }
-// SIGUSR1 핸들러 함수
+// SIGUSR1 핸들러 함수 (부모 프로세스가 사용하는 핸들러)
 void sigusr1_handler(int sig) {
     Message msg;
-    // 자식 프로세스는 파이프에서 메시지를 읽음
-    int process_index = getpid();  // 프로세스 ID로 클라이언트 인덱스 결정 (또는 다른 방법으로 인덱스 확인)
-    if (read(pipe2[process_index][0], &msg, sizeof(msg)) > 0) {
-        printf(" → Received broadcast from parent [%s]: %s\n", msg.username, msg.content);
+    // 부모 프로세스는 파이프에서 메시지를 읽음
+    for (int i = 0; i < client_count; i++) {
+        int n = read(pipe1[i][0], &msg, sizeof(msg));
+        if (n > 0) {
+            printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
+            // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
+            broadcast_message(&msg);
+        }
     }
 }
 
+// 자식 프로세스에서 메시지 처리 (클라이언트로부터 메시지 수신 후)
+void handle_client_message(int process_index, int csock) {
+    Message msg;
+    do {
+        memset(&msg, 0, sizeof(msg)); // 메시지 초기화
+        int n = recv(csock, &msg, sizeof(msg), 0);
+        
+        if (n <= 0) {
+            if (n == 0) {
+                printf("Client 연결 종료.\n");
+            } else {
+                perror("recv()");
+            }
+            break;
+        }
 
+        if (strcmp(msg.content, "q") == 0) {
+            printf("%s has logout(q) the chat.\n", msg.username);
+            break;
+        }
+
+        if (strcmp(msg.type, "LOGIN") == 0) {
+            printf("▷ [%s] 님이 로그인\n", msg.username);
+            clients[process_index].sockfd = csock;
+            clients[process_index].pid = getpid(); // 프로세스 ID 저장
+            strcpy(clients[process_index].username, msg.username);
+            client_count++;
+        }
+
+        if (strcmp(msg.type, "MSG") == 0) {
+            printf("[CHILD] Sending message to parent: [%s]: %s\n", msg.username, msg.content);
+            // 부모 프로세스로 메시지 전송
+            if (write(pipe1[process_index][1], &msg, sizeof(msg)) == -1) {
+                perror("write() to parent");
+            }
+            // 부모에게 SIGUSR1 신호 보내기
+            kill(getppid(), SIGUSR1);
+        }
+
+    } while (1);
+
+    close(csock);
+    exit(0); // 자식 프로세스 종료
+}
+
+//부모 -> 자식 에게 메세지 전달 
 void broadcast_message(Message *msg) {
     for (int i = 0; i < client_count; i++) {
         // 파이프에 메시지 쓰기
@@ -96,46 +145,13 @@ void handle_sigchld(int signum){
     while((pid=waitpid(-1, &status, WNOHANG))>0){
         running_children--; // 자식프로세스 수 감소 
         printf("Child process PID %d : 종료, (남은자식: %d)\n", pid,running_children);
-/*
-        //남은 자식이 없으면 부모도 종료 
-        if(running_children ==0){
-            printf("모든 자식프로세스 종료. 서버를 종료합니다.\n");
-//            close(pipefd[0]);
-//            close(pipefd[1]);
-            exit(0);
-        }*/
     }
 }
-
-
-//파이프에서 메시지를 읽고 처리하는 함수  (논블로킹모드 -> 반복적으로 )
-void handle_pipe_read() {
-    
-    Message msg;
-    int n;
-
-    //파이프에서 메시지를 반복적으로 읽어처리 
-    while(1){
-        for(int i=0;i<client_count;i++){
-            n=read(pipe1[i][0],&msg,sizeof(msg)); //자식 -> 부모 파이프
-        
-            if(n>0){
-                printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
-                broadcast_message(&msg);
-        
-            }else if(n==-1){
-                perror("read() from pipe1");
-            }
-        }
-    }
-}
-
-
-
 int main(int argc, char **argv)
 {
     //시그널  핸들러 설정
     signal(SIGCHLD,handle_sigchld);
+    signal(SIGUSR1,sigusr1_handler);
     
     int ssock,csock;
     Message msg; //메시지 구조체 
@@ -187,51 +203,9 @@ int main(int argc, char **argv)
         
         }else if (pid==0){
             close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
-            
             int process_index = client_count;
-
-            //로그인 및 메시지 처리
-            //
-            do{
-                memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
-                int n= recv(csock, &msg,sizeof(msg),0);
-                
-
-                if (n<=0){
-                    if(n==0){
-                        printf("Client 연결 종료.\n");
-                    }else{
-                        perror("recv()");
-                    }
-                    break;
-                }
-                if(strcmp(msg.content,"q")==0){
-                    //클라이언트가 'q'
-                    printf("%s has logout(q) the chat.\n",msg.username);
-                    break;
-                }
-
-                if(strcmp(msg.type,"LOGIN")==0){
-                    //클라이언트 로그인 처리
-                    printf("▷ [%s] 님이 로그인\n",msg.username);
-                    clients[client_count].sockfd = csock;
-                    clients[client_count].pid=getpid(); //프로세스ID 
-                    strcpy(clients[client_count].username, msg.username);
-                    client_count++;
-                }
-                if(strcmp(msg.type, "MSG")==0){
-                    printf("[CHILD] Sending message to parent: [%s]: %s\n", msg.username, msg.content);
-                    //부모 프로세스로 메시지 전송
-                    if(write(pipe1[process_index][1],&msg,sizeof(msg))==-1){
-                        perror("write() to parent");
-                    }
-                    //부모로부터 메시지 수신
-                    if(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
-                        printf(" → Recieved from parent [%s] : %s\n",msg.username,msg.content);
-                    }
-                }   
-            }while(1); //종료 조건이 발생할 때까지 루프
-
+            handle_client_message(process_index,csock); 
+            
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
@@ -242,8 +216,6 @@ int main(int argc, char **argv)
         //부모는 파이프에서 메시지 읽기
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
     
-
-    handle_pipe_read();
     close(ssock);/*서버 소켓을 닫음 */
     return 0;
 }
