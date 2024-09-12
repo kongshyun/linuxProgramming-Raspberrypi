@@ -35,6 +35,7 @@ typedef struct{
 int pipe1[MAX_CLIENTS][2]; //자식 -> 부모 
 int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
+void broadcast_message(Message *msg);
 
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
@@ -66,24 +67,13 @@ void setup_nonblocking_pipes(){
         set_nonblocking_pipe(pipe2[i]);
     }
 }
-// SIGUSR1 핸들러 함수 (부모 프로세스가 사용하는 핸들러)
-void sigusr1_handler(int sig) {
-    Message msg;
-    // 부모 프로세스는 파이프에서 메시지를 읽음
-    for (int i = 0; i < client_count; i++) {
-        int n = read(pipe1[i][0], &msg, sizeof(msg));
-        if (n > 0) {
-            printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
-            // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
-            broadcast_message(&msg);
-        }
-    }
-}
 
 // 자식 프로세스에서 메시지 처리 (클라이언트로부터 메시지 수신 후)
 void handle_client_message(int process_index, int csock) {
     Message msg;
-    do {
+
+    signal(SIGUSR1,sigusr1_handler);
+    while(1){
         memset(&msg, 0, sizeof(msg)); // 메시지 초기화
         int n = recv(csock, &msg, sizeof(msg), 0);
         
@@ -106,7 +96,7 @@ void handle_client_message(int process_index, int csock) {
             clients[process_index].sockfd = csock;
             clients[process_index].pid = getpid(); // 프로세스 ID 저장
             strcpy(clients[process_index].username, msg.username);
-            client_count++;
+//            client_count++;
         }
 
         if (strcmp(msg.type, "MSG") == 0) {
@@ -119,7 +109,7 @@ void handle_client_message(int process_index, int csock) {
             kill(getppid(), SIGUSR1);
         }
 
-    } while (1);
+    }
 
     close(csock);
     exit(0); // 자식 프로세스 종료
@@ -134,6 +124,49 @@ void broadcast_message(Message *msg) {
         }
         // SIGUSR1 신호를 자식 프로세스에게 전송
         kill(clients[i].pid, SIGUSR1);
+    }
+}
+/*
+// SIGUSR1 핸들러 함수 (부모 프로세스가 사용하는 핸들러)
+void sigusr1_handler(int sig) {
+    Message msg;
+    int process_index=getpid();
+
+    // 부모 프로세스는 파이프에서 메시지를 읽음
+    if(read(pipe2[process_index][0], &msg, sizeof(msg))>0){
+        printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
+        if(send(clients[process_index].sockfd,&msg,sizeof(msg),0)<=0){
+            perror("send() to client");
+        }
+    }
+}
+*/
+
+void sigusr1_handler(int sig) {
+    Message msg;
+
+    // 부모 프로세스일 경우
+    if (getpid() == getppid()) {
+        // 자식 프로세스가 보낸 메시지를 처리 (부모 프로세스의 경우)
+        for (int i = 0; i < client_count; i++) {
+            int n = read(pipe1[i][0], &msg, sizeof(msg));
+            if (n > 0) {
+                printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
+                broadcast_message(&msg);  // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
+            }
+        }
+    }
+    // 자식 프로세스일 경우
+    else {
+        int process_index = getpid();  // 자식 프로세스의 인덱스 결정 (또는 다른 방식으로 인덱스 확인)
+        // 부모 프로세스로부터 메시지를 수신 (자식 프로세스의 경우)
+        if (read(pipe2[process_index][0], &msg, sizeof(msg)) > 0) {
+            printf("[CHILD] Received broadcast from parent: [%s]: %s\n", msg.username, msg.content);
+            // 클라이언트에게 메시지 전송
+            if (send(clients[process_index].sockfd, &msg, sizeof(msg), 0) <= 0) {
+                perror("send() to client");
+            }
+        }
     }
 }
 
@@ -210,6 +243,7 @@ int main(int argc, char **argv)
             exit(0);     //자식 프로세스 종료
         }
         running_children++;  // 실행 중인 자식 프로세스 수 증가
+        client_count++;
         printf("New client connected. Current running children: %d\n", running_children);
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
         
