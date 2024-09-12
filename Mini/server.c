@@ -68,18 +68,12 @@ void setup_nonblocking_pipes(){
 }
 
 
-void broadcast_message(Message *msg) {
+void broadcast_message(Message *msg,int sender_index) {
     for (int i = 0; i < client_count; i++) {
-        /*
-        if (clients[i].sockfd != sender_sock) {
-            printf("부모 -클라이언트에게로  브로드캐스팅 메시지[%d]\n ",clients[i].sockfd);
-            if(send(clients[i].sockfd,msg,sizeof(*msg),0)<=0){
-                perror("send()");
+        if(i !=sender_index){
+            if(write(pipe2[i][1],msg,sizeof(*msg))==-1){
+                perror("write()");
             }
-        }
-        */
-        if(write(pipe2[i][1],msg,sizeof(*msg))==-1){
-            perror("write()");
         }
     }
 }
@@ -96,8 +90,6 @@ void handle_sigchld(int signum){
         //남은 자식이 없으면 부모도 종료 
         if(running_children ==0){
             printf("모든 자식프로세스 종료. 서버를 종료합니다.\n");
-//            close(pipefd[0]);
-//            close(pipefd[1]);
             exit(0);
         }
     }
@@ -117,7 +109,7 @@ void handle_pipe_read() {
         
             if(n>0){
                 printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
-                broadcast_message(&msg);
+                broadcast_message(&msg,i);
         
             }else if(n==-1){
                 perror("read() from pipe1");
@@ -223,8 +215,12 @@ int main(int argc, char **argv)
                         perror("write() to parent");
                     }
                     //부모로부터 메시지 수신
-                    if(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
+                    while(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
                         printf(" → Recieved from parent [%s] : %s\n",msg.username,msg.content);
+
+                        if(send(csock, &msg, sizeof(msg),0)==-1){
+                            perror("send() to client");
+                        }
                     }
                 }   
             }while(1); //종료 조건이 발생할 때까지 루프
