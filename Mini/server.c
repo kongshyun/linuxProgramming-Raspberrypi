@@ -30,13 +30,15 @@ typedef struct{
     char content[256];//메시지 내용 
 }Message;
 
+
 int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝 
+int pipe1[MAX_CLIENTS][2]; //자식 -> 부모 
+int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
 
-int child_pipes[MAX_CLIENTS][2];
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
-        if(pipe(child_pipes[i])==-1){
+        if(pipe(pipe1[i])== -1 || pipe(pipe2[i])==-1){
             perror("pipe()");
             exit(1);
         }
@@ -53,7 +55,7 @@ void broadcast_message(Message *msg) {
             }
         }
         */
-        if(write(child_pipes[i][1],msg,sizeof(*msg))==-1){
+        if(write(pipe2[i][1],msg,sizeof(*msg))==-1){
             perror("write()");
         }
     }
@@ -70,9 +72,9 @@ void handle_sigchld(int signum){
 
         //남은 자식이 없으면 부모도 종료 
         if(running_children ==0){
-            printf("All child process terminated, Shutdown server.\n");
-            close(pipefd[0]);
-            close(pipefd[1]);
+            printf("모든 자식프로세스 종료. 서버를 종료합니다.\n");
+//            close(pipefd[0]);
+//            close(pipefd[1]);
             exit(0);
         }
     }
@@ -87,13 +89,14 @@ void handle_pipe_read() {
 
     //파이프에서 메시지를 반복적으로 읽어처리 
     while(1){
-        n=read(pipefd[0],&msg,sizeof(msg)); //자식 -> 부모 파이프
-        if(n>0){
-            printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
-            broadcast_message(&msg);
-        }else if(n ==-1){
-            //파이프에 읽은 데이터가 없을 경우, 루프를 빠젹나감.
-            break;
+        for(int i=0;i<client_count;i++){
+            n=read(pipe1[i][0],&msg,sizeof(msg)); //자식 -> 부모 파이프
+        
+            if(n>0){
+                printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
+                broadcast_message(&msg);
+        
+            }
         }
     }
 }
@@ -101,10 +104,9 @@ void handle_pipe_read() {
 
 
 
-
 int main(int argc, char **argv)
 {
-    //SIGUSR1 핸들러 설정
+    //시그널  핸들러 설정
     signal(SIGCHLD,handle_sigchld);
     
     int ssock,csock;
@@ -120,7 +122,7 @@ int main(int argc, char **argv)
     }
         
     printf("Server Socket is created.! \n");
-
+/*
     //파이프 생성
     if (pipe(pipefd)==-1){
         perror("pipe()");
@@ -140,6 +142,8 @@ int main(int argc, char **argv)
         perror("fcntl()");
         return -1;
     }
+*/
+
     /*주소 구조체에 주소 지정 */
     memset(&servaddr, 0,sizeof(servaddr));
     servaddr.sin_family=AF_INET;
@@ -149,10 +153,9 @@ int main(int argc, char **argv)
 
     if(bind(ssock,(struct sockaddr *)&servaddr, sizeof(servaddr))<0) {
         perror("bind()");
-
-
         return -1;
     }
+
     /*대기하는 클라이언트 숫자 설정. */
     if(listen(ssock,MAX_CLIENTS)<0){
         perror("listen()");
@@ -161,26 +164,31 @@ int main(int argc, char **argv)
 
     printf("Server is listening on port %d\n",TCP_PORT);
 
+    setup_pipes();
+
     do {
 
         //이전에 남아있는 파이프 메시지 모두 처리
-        handle_pipe_read();
+        //handle_pipe_read();
 
         //클라이언트 연결 수락 
         csock = accept(ssock,(struct sockaddr *)&cliaddr, &clen);
         if(csock<0){
-
             perror("accept()");
             continue;
         }
 
         //자식프로세스 생성 
         if((pid=fork())<0){
-            perror("Error");
+            perror("fork()");
         
         }else if (pid==0){
             close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
+            
+            int process_index = client_count;
+
             //로그인 및 메시지 처리
+            //
             do{
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
                 int n= recv(csock, &msg,sizeof(msg),0);
@@ -221,7 +229,7 @@ int main(int argc, char **argv)
                     //}
                     
                     //부모로부터 메시지 수신
-                    if(read(child_pipes[process_index][0],&msg,sizeof(msg))>0){
+                    if(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
                         printf(" → Message [%s] : %s\n",msg.username,msg.content);
                     }
                 }   
