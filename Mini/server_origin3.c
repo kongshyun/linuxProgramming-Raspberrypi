@@ -127,21 +127,6 @@ void broadcast_message(Message *msg) {
         kill(clients[i].pid, SIGUSR1);
     }
 }
-/*
-// SIGUSR1 핸들러 함수 (부모 프로세스가 사용하는 핸들러)
-void sigusr1_handler(int sig) {
-    Message msg;
-    int process_index=getpid();
-
-    // 부모 프로세스는 파이프에서 메시지를 읽음
-    if(read(pipe2[process_index][0], &msg, sizeof(msg))>0){
-        printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
-        if(send(clients[process_index].sockfd,&msg,sizeof(msg),0)<=0){
-            perror("send() to client");
-        }
-    }
-}
-*/
 
 void sigusr1_handler(int sig) {
     Message msg;
