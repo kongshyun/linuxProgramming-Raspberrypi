@@ -21,9 +21,9 @@ typedef struct{
     pid_t pid; // 클라이언트 프로세스 ID 
 }Client;
 
-Client clients[MAX_CLIENTS]; //클라이언트 리스트
-int client_count =0;
-int running_children=0; // 실행중인 자식 프로세스 수
+extern Client clients[MAX_CLIENTS]; //클라이언트 리스트
+extern int client_count =0;
+extern int running_children=0; // 실행중인 자식 프로세스 수
 
 //메시지 구조체
 typedef struct{
@@ -37,7 +37,7 @@ typedef struct{
 int pipe1[MAX_CLIENTS][2]; //자식 -> 부모 
 int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
-
+//파이프 생성
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
         if(pipe(pipe1[i])== -1 || pipe(pipe2[i])==-1){
