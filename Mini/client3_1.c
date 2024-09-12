@@ -70,7 +70,7 @@ int main(int argc, char **argv)
     //메시지 송수신 루프
     while(1){
         //서버로부터 수신된 메세지 출력 
-        while(1){
+        //while(1){
             int bytes_received=recv(ssock, &msg,sizeof(msg),0);
             if(bytes_received>0){
                 printf("[%s] : %s\n",msg.username, msg.content);
@@ -80,7 +80,7 @@ int main(int argc, char **argv)
                 perror("recv()");
                 return -1;
             }
-        }        
+                
 
         //사용자로부터 메시지 입력 
         printf("Enter message (exit 'q'): ");

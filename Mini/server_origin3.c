@@ -36,6 +36,7 @@ int pipe1[MAX_CLIENTS][2]; //자식 -> 부모
 int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
 void broadcast_message(Message *msg);
+void sigusr1_handler(int sig);
 
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
@@ -146,7 +147,7 @@ void sigusr1_handler(int sig) {
     Message msg;
 
     // 부모 프로세스일 경우
-    if (getpid() == getppid()) {
+    if (getppid() == 1) {  // 부모 프로세스인 경우 (init 프로세스가 아닌 경우를 사용)
         // 자식 프로세스가 보낸 메시지를 처리 (부모 프로세스의 경우)
         for (int i = 0; i < client_count; i++) {
             int n = read(pipe1[i][0], &msg, sizeof(msg));
@@ -155,16 +156,26 @@ void sigusr1_handler(int sig) {
                 broadcast_message(&msg);  // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
             }
         }
-    }
-    // 자식 프로세스일 경우
+    } 
+   // 자식 프로세스일 경우
     else {
-        int process_index = getpid();  // 자식 프로세스의 인덱스 결정 (또는 다른 방식으로 인덱스 확인)
-        // 부모 프로세스로부터 메시지를 수신 (자식 프로세스의 경우)
-        if (read(pipe2[process_index][0], &msg, sizeof(msg)) > 0) {
-            printf("[CHILD] Received broadcast from parent: [%s]: %s\n", msg.username, msg.content);
-            // 클라이언트에게 메시지 전송
-            if (send(clients[process_index].sockfd, &msg, sizeof(msg), 0) <= 0) {
-                perror("send() to client");
+        int process_index = -1;
+        // 현재 프로세스 ID에 해당하는 클라이언트 인덱스를 찾음
+        for (int i = 0; i < client_count; i++) {
+            if (clients[i].pid == getpid()) {
+                process_index = i;
+                break;
+            }
+        }
+
+        if (process_index != -1) {
+            // 부모 프로세스로부터 메시지를 수신 (자식 프로세스의 경우)
+            if (read(pipe2[process_index][0], &msg, sizeof(msg)) > 0) {
+                printf("[CHILD] Received broadcast from parent: [%s]: %s\n", msg.username, msg.content);
+                // 클라이언트에게 메시지 전송
+                if (send(clients[process_index].sockfd, &msg, sizeof(msg), 0) <= 0) {
+                    perror("send() to client");
+                }
             }
         }
     }
