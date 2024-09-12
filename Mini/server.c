@@ -33,13 +33,28 @@ typedef struct{
 int pipefd[2]; //[0]읽기 끝, [1]쓰기 끝 
 
 
-void broadcast_message(Message *msg, int sender_sock) {
+int child_pipes[MAX_CLIENTS][2];
+void setup_pipes(){
+    for(int i=0;i<MAX_CLIENTS;i++){
+        if(pipe(child_pipes[i])==-1){
+            perror("pipe()");
+            exit(1);
+        }
+    }
+}
+
+void broadcast_message(Message *msg) {
     for (int i = 0; i < client_count; i++) {
+        /*
         if (clients[i].sockfd != sender_sock) {
             printf("부모 -클라이언트에게로  브로드캐스팅 메시지[%d]\n ",clients[i].sockfd);
             if(send(clients[i].sockfd,msg,sizeof(*msg),0)<=0){
                 perror("send()");
             }
+        }
+        */
+        if(write(child_pipes[i][1],msg,sizeof(*msg))==-1){
+            perror("write()");
         }
     }
 }
@@ -63,6 +78,7 @@ void handle_sigchld(int signum){
     }
 }
 
+
 //파이프에서 메시지를 읽고 처리하는 함수  (논블로킹모드 -> 반복적으로 )
 void handle_pipe_read() {
     
@@ -71,10 +87,10 @@ void handle_pipe_read() {
 
     //파이프에서 메시지를 반복적으로 읽어처리 
     while(1){
-        n=read(pipefd[0],&msg,sizeof(msg)); //파이프에서 메시지를 읽기.
+        n=read(pipefd[0],&msg,sizeof(msg)); //자식 -> 부모 파이프
         if(n>0){
             printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
-            broadcast_message(&msg,-1);
+            broadcast_message(&msg);
         }else if(n ==-1){
             //파이프에 읽은 데이터가 없을 경우, 루프를 빠젹나감.
             break;
@@ -193,16 +209,21 @@ int main(int argc, char **argv)
                     client_count++;
                 }
                 if(strcmp(msg.type, "MSG")==0){
-                    int bytes_written = write(pipefd[1],&msg,sizeof(msg)); // 부모프로세스에 메시지 전송
-                    printf(" → Message [%s] : %s\n",msg.username,msg.content);
-                    if(bytes_written<=0){
+
+                    //부모 프로세스로 메시지 전송
+                    if(write(pipefd[1],&msg,sizeof(msg))==-1){
                         perror("write()");
                     }
-
-                    //if(send(csock,&msg,sizeof(msg),0)<=0){
-                    //    perror("send()");
-                    //    break;
+                    //int bytes_written = write(pipefd[1],&msg,sizeof(msg)); // 부모프로세스에 메시지 전송
+                    //printf(" → Message [%s] : %s\n",msg.username,msg.content);
+                    //if(bytes_written<=0){
+                    //    perror("write()");
                     //}
+                    
+                    //부모로부터 메시지 수신
+                    if(read(child_pipes[process_index][0],&msg,sizeof(msg))>0){
+                        printf(" → Message [%s] : %s\n",msg.username,msg.content);
+                    }
                 }   
             }while(1); //종료 조건이 발생할 때까지 루프
 
