@@ -11,6 +11,7 @@
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 #define MAX_CLIENTS 10
+#define BUFSIZE 1024
 
 //클라이언트 정보 구조체
 typedef struct{
@@ -35,7 +36,13 @@ typedef struct{
 int pipe1[MAX_CLIENTS][2]; //자식 -> 부모 
 int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 
+void handle_pipe_read(void);
 
+void handle_signal(int sig){
+    if(sig==SIGUSR1){
+        handle_pipe_read();
+    }
+}
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
         if(pipe(pipe1[i])== -1 || pipe(pipe2[i])==-1){
@@ -71,8 +78,51 @@ void setup_nonblocking_pipes(){
 void broadcast_message(Message *msg,int sender_index) {
     for (int i = 0; i < client_count; i++) {
         if(i !=sender_index){
-            if(write(pipe2[i][1],msg,sizeof(*msg))==-1){
-                perror("write()");
+            write(pipe2[i][1],msg,sizeof(*msg))==-1){
+                perror("write()to child pipe");
+            }
+            kill(clients[i].pid,SIGUSR1);
+        }
+    }
+}
+
+//파이프에서 메시지를 읽고 처리하는 함수  (논블로킹모드 -> 반복적으로 )
+void handle_pipe_read() {
+    
+    Message msg;
+    int n;
+
+    //파이프에서 메시지를 반복적으로 읽어처리 
+
+    for(int i=0;i<client_count;i++){
+        n=read(pipe1[i][0],&msg,sizeof(msg)); //자식 -> 부모 파이프
+    
+        if(n>0){
+            printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
+            broadcast_message(&msg,i);
+    
+        }
+    }
+}
+// 자식 프로세스에서 시그널을 처리하는 함수
+void child_handle_signal(int sig) {
+    if (sig == SIGUSR1) {
+        // 부모 프로세스로부터 메시지를 받고 처리
+        Message msg;
+        int process_index = -1;
+        for (int i = 0; i < client_count; i++) {
+            if (clients[i].pid == getpid()) {
+                process_index = i;
+                break;
+            }
+        }
+
+        if (process_index != -1) {
+            while (read(pipe2[process_index][0], &msg, sizeof(msg)) > 0) {
+                printf(" → 부모로부터 메시지 수신 [%s]: %s\n", msg.username, msg.content);
+                if (send(clients[process_index].sockfd, &msg, sizeof(msg), 0) == -1) {
+                    perror("send() to client");
+                }
             }
         }
     }
@@ -96,25 +146,53 @@ void handle_sigchld(int signum){
 }
 
 
-//파이프에서 메시지를 읽고 처리하는 함수  (논블로킹모드 -> 반복적으로 )
-void handle_pipe_read() {
-    
+// Parent reads from pipe1 (child -> parent) and broadcasts message to other clients
+void handle_parent_read(int sender_index) {
+    Message msg;
+    read(pipe1[sender_index][0], &msg, sizeof(Message));
+    printf("[PARENT] Received from client %d [%s]: %s\n", sender_index, msg.username, msg.content);
+    broadcast_message(&msg, sender_index);
+}
+
+// Child reads from client socket and sends to parent via pipe
+void handle_child_communication(int client_sock, int client_index) {
     Message msg;
     int n;
+    while ((n = read(client_sock, &msg, sizeof(Message))) > 0) {
+        printf("[CHILD] Received from client: [%s]: %s\n", msg.username, msg.content);
 
-    //파이프에서 메시지를 반복적으로 읽어처리 
-    while(1){
-        for(int i=0;i<client_count;i++){
-            n=read(pipe1[i][0],&msg,sizeof(msg)); //자식 -> 부모 파이프
-        
-            if(n>0){
-                printf("[PARENT] Received message from child: [%s]: %s\n",msg.username, msg.content);
-                broadcast_message(&msg,i);
-        
-            }//else if(n==-1){
-             //   perror("read() from pipe1");
-             //}
+        // Send the message to the parent
+        write(pipe1[client_index][1], &msg, sizeof(Message));
+
+        // Notify the parent to read the message
+        kill(getppid(), SIGUSR1);
+
+        // If the client sends 'q', terminate the connection
+        if (strncmp(msg.content, "q", 1) == 0) {
+            break;
         }
+    }
+    close(client_sock);
+    exit(0);
+}
+
+
+// Signal handler for child processes to read the broadcasted message from parent
+void handle_child_signal(int sig) {
+    Message msg;
+    int client_index = -1;
+
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].pid == getpid()) {
+            client_index = i;
+            break;
+        }
+    }
+
+    if (client_index != -1) {
+        read(pipe2[client_index][0], &msg, sizeof(Message));
+        printf("[CHILD] Received broadcast message: [%s]: %s\n", msg.username, msg.content);
+        write(clients[client_index].sockfd, &msg, sizeof(Message));
     }
 }
 
@@ -125,6 +203,7 @@ int main(int argc, char **argv)
 {
     //시그널  핸들러 설정
     signal(SIGCHLD,handle_sigchld);
+    signal(SIGUSR1, handle_signal);  // 부모 프로세스에서 SIGUSR1 시그널 처리    
     
     int ssock,csock;
     Message msg; //메시지 구조체 
@@ -162,6 +241,7 @@ int main(int argc, char **argv)
 
     setup_pipes();
     setup_nonblocking_pipes();
+
     do {
         //클라이언트 연결 수락 
         csock = accept(ssock,(struct sockaddr *)&cliaddr, &clen);
@@ -175,13 +255,12 @@ int main(int argc, char **argv)
             perror("fork()");
         
         }else if (pid==0){
+            signal(SIGUSR1, child_handle_signal);
             close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
             
             int process_index = client_count;
 
-            //로그인 및 메시지 처리
-            //
-            do{
+            while(1){
                 memset(&msg, 0,sizeof(msg)); //메시지 구조체 초기화
                 int n= recv(csock, &msg,sizeof(msg),0);
                 
@@ -214,29 +293,20 @@ int main(int argc, char **argv)
                     if(write(pipe1[process_index][1],&msg,sizeof(msg))==-1){
                         perror("write() to parent");
                     }
-                    //부모로부터 메시지 수신
-                    while(read(pipe2[process_index][0],&msg,sizeof(msg))>0){
-                        printf(" → Recieved from parent [%s] : %s\n",msg.username,msg.content);
-
-                        if(send(csock, &msg, sizeof(msg),0)==-1){
-                            perror("send() to client");
-                        }
-                    }
+                    kill(getppid(), SIGUSR1);  // 부모에게 시그널 보내기
                 }   
-            }while(1); //종료 조건이 발생할 때까지 루프
+            } //종료 조건이 발생할 때까지 루프
 
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
         running_children++;  // 실행 중인 자식 프로세스 수 증가
-        printf("New client connected. Current running children: %d\n", running_children);
+        printf("새로운 클라이언트 연결: %d\n", running_children);
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
         
         //부모는 파이프에서 메시지 읽기
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
     
-
-    handle_pipe_read();
     close(ssock);/*서버 소켓을 닫음 */
     return 0;
 }
