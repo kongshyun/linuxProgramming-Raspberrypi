@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     }
 
     // 로그인 요청: 사용자 이름 입력
-    printf("Enter your username: ");
+    printf(" 로그인 ID : ");
     fgets(username, sizeof(username), stdin);
     username[strcspn(username, "\n")] = 0; // 개행 문제 제거
 
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         }
 
         // 사용자로부터 메시지 입력
-        printf("Enter message (exit 'q'): ");
+        printf(" 메시지(exit 'q'):");
         fgets(msg.content, sizeof(msg.content), stdin);
         msg.content[strcspn(msg.content, "\n")] = 0;  // 개행 문자 제거
 

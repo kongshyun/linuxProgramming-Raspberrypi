@@ -8,7 +8,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
+#include <syslog.h>
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 #define MAX_CLIENTS 10
@@ -39,18 +41,15 @@ int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 void broadcast_message(Message *msg,int sender_pid);
 void child_sigusr1_handler(int sig);
 void parent_sigusr1_handler (int sig);
-
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
         if(pipe(pipe1[i])== -1 || pipe(pipe2[i])==-1){
             perror("pipe()");
             exit(1);
-        }else{
-            printf("Pipe 생성성공! pipe1[%d] , pipe2[%d]\n",i,i);
         }
     }
 }
-/*
+
 void set_nonblocking_pipe(int pipefd[2]){
     int flags;
     flags = fcntl(pipefd[0],F_GETFL,0);
@@ -64,43 +63,6 @@ void set_nonblocking_pipe(int pipefd[2]){
         exit(1);
     }
     
-
-}
-*/
-void set_nonblocking_pipe(int pipefd[2]) {
-    int flags;
-
-    // 읽기 끝 비차단 모드 설정
-    flags = fcntl(pipefd[0], F_GETFL, 0);
-    if (flags == -1) {
-        perror("fcntl() for read end of pipe failed");
-        exit(1);
-    } else {
-        printf("읽기 파이프 파일 디스크립터 플래그: %d\n", flags);
-    }
-
-    if (fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK) == -1) {
-        perror("fcntl() setting non-blocking for read failed");
-        exit(1);
-    } else {
-        printf("읽기 파이프 비차단 모드 설정 성공\n");
-    }
-
-    // 쓰기 끝 비차단 모드 설정
-    flags = fcntl(pipefd[1], F_GETFL, 0);
-    if (flags == -1) {
-        perror("fcntl() for write end of pipe failed");
-        exit(1);
-    } else {
-        printf("쓰기 파이프 파일 디스크립터 플래그: %d\n", flags);
-    }
-
-    if (fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK) == -1) {
-        perror("fcntl() setting non-blocking for write failed");
-        exit(1);
-    } else {
-        printf("쓰기 파이프 비차단 모드 설정 성공\n");
-    }
 }
 
 void setup_nonblocking_pipes(){
@@ -112,17 +74,17 @@ void setup_nonblocking_pipes(){
 
 // 자식 프로세스에서 메시지 처리 (클라이언트로부터 메시지 수신 후)
 void handle_client_message(int process_index, int csock) {
-    printf("클라이언트 메시지처리중!!\n");
+//    printf("핸들클라이언트 메시지!!");
     Message msg;
 
-    //signal(SIGUSR1,child_sigusr1_handler);
+    signal(SIGUSR1,child_sigusr1_handler);
     while(1){
         memset(&msg, 0, sizeof(msg)); // 메시지 초기화
         int n = recv(csock, &msg, sizeof(msg), 0);
         
         if (n <= 0) {
             if (n == 0) {
-                printf("Client 연결 종료.\n");
+                //printf("Client 연결 종료.\n");
             } else {
                 perror("recv()");
             }
@@ -135,7 +97,7 @@ void handle_client_message(int process_index, int csock) {
         }
 
         if (strcmp(msg.type, "LOGIN") == 0) {
-            printf("▷ [%s] 님이 로그인\n", msg.username);
+            printf(" --- [%s] 님이 입장하셨습니다.---\n", msg.username);
             clients[process_index].sockfd = csock;
             clients[process_index].pid = getpid(); // 프로세스 ID 저장
             strcpy(clients[process_index].username, msg.username);
@@ -143,7 +105,7 @@ void handle_client_message(int process_index, int csock) {
         }
 
         if (strcmp(msg.type, "MSG") == 0) {
-            printf("[CHILD] Sending message to parent: [%s]: %s\n", msg.username, msg.content);
+            printf("[%s]메시지: %s\n", msg.username, msg.content);
             // 부모 프로세스로 메시지 전송
             if (write(pipe1[process_index][1], &msg, sizeof(msg)) == -1) {
                 perror("write() to parent");
@@ -160,43 +122,34 @@ void handle_client_message(int process_index, int csock) {
 
 //부모 -> 자식 에게 메세지 전달 
 void broadcast_message(Message *msg,int sender_pid) {
-    printf("broadcast!!\n");
+//    printf("broadcast!!\n");
     for (int i = 0; i < client_count; i++) {
-        printf(" for문 진입!\n");
         // 파이프에 메시지 쓰기
-   /*     if(clients[i].pid == sender_pid){
-            printf("clieee\n");
+        if(clients[i].pid == sender_pid){
             continue;
-        }*/
-        if (write(pipe2[i][1], &msg, sizeof(msg)) == -1) {
+        }
+        if (write(pipe2[i][1], msg, sizeof(*msg)) == -1) {
             perror("write()");
-            printf("errno: %d\n",errno);
-        }else {
-            printf(" 다른 자식에게 write() 성공!\n");
         }
         // SIGUSR1 신호를 자식 프로세스에게 전송
         if(kill(clients[i].pid, SIGUSR1)==-1){
-            printf("kill 실패\n");
             perror("kill() error");
         }else {
             printf("SIGUSR1 sent to child process (PID: %d)\n", clients[i].pid);
         }
     }
-    printf("clieee\n");
 }
 
 void parent_sigusr1_handler(int sig) {
+    Message msg;
 
     // 부모 프로세스일 경우 자식 프로세스로부터 메시지를 읽음
     for (int i = 0; i < client_count; i++) {
-        Message msg;
         int n = read(pipe1[i][0], &msg, sizeof(msg));
         if (n > 0) {
-            printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
+            //printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
             // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
             broadcast_message(&msg,clients[i].pid);
-        }else if (n ==-1 &&errno != EAGAIN && errno !=EWOULDBLOCK){
-            perror("read() from child");
         }
     }
 }
@@ -210,11 +163,9 @@ void child_sigusr1_handler(int sig) {
         if (clients[i].pid == getpid()) {
             process_index = i;
             break;
-        }else {
-            perror("read() 파이프 실패!!");
         }
     }
-    printf("자식 핸들러!!!\n");
+
     if (process_index != -1) {
         printf("[CHILD] Received SIGUSR1 in child process (PID: %d)\n", getpid());  // 신호 수신 확인
         // 부모 프로세스로부터 메시지를 읽음
@@ -229,7 +180,7 @@ void child_sigusr1_handler(int sig) {
         }else {
             perror("read() 파이프 실패!");
         }
-    }else printf("자식 핸들러끝\n");
+    }
 }
 
 //자식 프로세스가 종료되었을때 처리
@@ -239,11 +190,19 @@ void handle_sigchld(int signum){
 
     while((pid=waitpid(-1, &status, WNOHANG))>0){
         running_children--; // 자식프로세스 수 감소 
-        printf("Child process PID %d : 종료, (남은자식: %d)\n", pid,running_children);
+        printf("  >> PID %d 님이 퇴장하셨습니다. (현재인원: %d)\n", pid,running_children);
     }
 }
 int main(int argc, char **argv)
 {
+    struct sigaction sa;
+    struct rlimit rl;
+    int fd0, fd1, fd2, i;
+    
+    umask(0);
+    if(getrlimit(RLIMIT_NOFILE,&rl)<0) {
+        perror("getlimit()");
+    }
     //시그널  핸들러 설정
     signal(SIGCHLD,handle_sigchld);
     signal(SIGUSR1,parent_sigusr1_handler);
@@ -260,7 +219,7 @@ int main(int argc, char **argv)
         return -1;
     }
         
-    printf("Server Socket is created.! \n");
+    printf("  '***채팅방에 오신걸 환영합니다***' \n");
 
     /*주소 구조체에 주소 지정 */
     memset(&servaddr, 0,sizeof(servaddr));
@@ -280,7 +239,7 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    printf("서버가 포트 %d에서 대기 중...\n",TCP_PORT);
+    printf("------채팅방에 아무도 없습니다------\n");
 
     setup_pipes();
     setup_nonblocking_pipes();
@@ -297,26 +256,53 @@ int main(int argc, char **argv)
             perror("fork()");
         
         }else if (pid==0){
-            printf("자식프로세스 생성!! PID : %d \n",getpid());
+            //printf("자식프로세스 생성!! PID : %d \n",getpid());
             close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
             int process_index = client_count;
-            signal(SIGUSR1,child_sigusr1_handler);
             handle_client_message(process_index,csock); 
             
             close(csock);/* 클라이언트 소켓을 닫음*/
             exit(0);     //자식 프로세스 종료
         }
-        else if(pid>0){
-            printf("부모프로세스!!\n");
-        }
         running_children++;  // 실행 중인 자식 프로세스 수 증가
         client_count++;
-        printf("New client connected. Current running children: %d\n", running_children);
+        printf("새로운 멤버가 채팅방에 입장했습니다. 현재인원 : %d\n", running_children);
         close(csock); //부모프로세스에서 클라이언트 소켓 닫기
         
         //부모는 파이프에서 메시지 읽기
     }while(1); //서버가 종료되기 전가지 클라이언트연결수락
+    setsid();
+
+    sa.sa_handler=SIG_IGN;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags=0;
+    if(sigaction(SIGHUP, &sa,NULL)<0){
+        perror("sigaction() : Can't ignore SIGHUP");
+    }
+
+    if(chdir("/")<0) {
+        perror("cd()");
+    }
+
+    if(rl.rlim_max == RLIM_INFINITY) {
+        rl.rlim_max=1024;
+    }
+    for(i=0;i<rl.rlim_max;i++){
+        close(i);
+    }
+    fd0 = open("/dev/null",O_RDWR);
+    fd1=dup(0);
+    fd2=dup(0);
+
+    openlog(argv[1],LOG_CONS,LOG_DAEMON);
+    if(fd0 !=0 || fd1 !=1 ||fd2!=2){
+        syslog(LOG_ERR, "unexpected file descriptors %d %d %d",fd0,fd1,fd2);
+        return -1;
+    }
     
+    syslog(LOG_INFO,"Daemon Process");
+
+    closelog();
     close(ssock);/*서버 소켓을 닫음 */
     return 0;
 }

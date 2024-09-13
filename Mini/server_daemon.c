@@ -164,10 +164,10 @@ void broadcast_message(Message *msg,int sender_pid) {
     for (int i = 0; i < client_count; i++) {
         printf(" for문 진입!\n");
         // 파이프에 메시지 쓰기
-   /*     if(clients[i].pid == sender_pid){
+        if(clients[i].pid == sender_pid){
             printf("clieee\n");
             continue;
-        }*/
+        }
         if (write(pipe2[i][1], &msg, sizeof(msg)) == -1) {
             perror("write()");
             printf("errno: %d\n",errno);
@@ -182,7 +182,6 @@ void broadcast_message(Message *msg,int sender_pid) {
             printf("SIGUSR1 sent to child process (PID: %d)\n", clients[i].pid);
         }
     }
-    printf("clieee\n");
 }
 
 void parent_sigusr1_handler(int sig) {
@@ -214,7 +213,7 @@ void child_sigusr1_handler(int sig) {
             perror("read() 파이프 실패!!");
         }
     }
-    printf("자식 핸들러!!!\n");
+
     if (process_index != -1) {
         printf("[CHILD] Received SIGUSR1 in child process (PID: %d)\n", getpid());  // 신호 수신 확인
         // 부모 프로세스로부터 메시지를 읽음
@@ -229,7 +228,7 @@ void child_sigusr1_handler(int sig) {
         }else {
             perror("read() 파이프 실패!");
         }
-    }else printf("자식 핸들러끝\n");
+    }
 }
 
 //자식 프로세스가 종료되었을때 처리

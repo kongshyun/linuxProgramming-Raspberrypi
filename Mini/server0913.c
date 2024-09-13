@@ -158,31 +158,15 @@ void handle_client_message(int process_index, int csock) {
     exit(0); // 자식 프로세스 종료
 }
 
-//부모 -> 자식 에게 메세지 전달 
-void broadcast_message(Message *msg,int sender_pid) {
-    printf("broadcast!!\n");
+void broadcast_message(Message *msg, int sender_index) {
     for (int i = 0; i < client_count; i++) {
-        printf(" for문 진입!\n");
-        // 파이프에 메시지 쓰기
-   /*     if(clients[i].pid == sender_pid){
-            printf("clieee\n");
-            continue;
-        }*/
-        if (write(pipe2[i][1], &msg, sizeof(msg)) == -1) {
-            perror("write()");
-            printf("errno: %d\n",errno);
-        }else {
-            printf(" 다른 자식에게 write() 성공!\n");
+        if (i == sender_index) {
+            continue; // 송신자는 제외
         }
-        // SIGUSR1 신호를 자식 프로세스에게 전송
-        if(kill(clients[i].pid, SIGUSR1)==-1){
-            printf("kill 실패\n");
-            perror("kill() error");
-        }else {
-            printf("SIGUSR1 sent to child process (PID: %d)\n", clients[i].pid);
+        if (write(pipe2[i][1], msg, sizeof(*msg)) == -1) {
+            perror("write() to child");
         }
     }
-    printf("clieee\n");
 }
 
 void parent_sigusr1_handler(int sig) {

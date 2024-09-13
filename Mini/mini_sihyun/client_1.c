@@ -44,12 +44,12 @@ int main(int argc, char **argv)
         perror("connect()");
         return -1;
     }
-
+    
     // 로그인 요청: 사용자 이름 입력
-    printf(" 로그인 ID : ");
+    printf("  ***채팅방 입장 완료***\n >> 로그인 ID : ");
     fgets(username, sizeof(username), stdin);
     username[strcspn(username, "\n")] = 0; // 개행 문제 제거
-
+    printf(" -- 로그아웃하려면 q를 입력하세요-- \n");
     // 로그인 메시지 전송
     strcpy(msg.type, "LOGIN");
     strcpy(msg.username, username);
@@ -78,7 +78,7 @@ int main(int argc, char **argv)
         }
 
         // 사용자로부터 메시지 입력
-        printf(" 메시지(exit 'q'):");
+        printf(" 메시지:");
         fgets(msg.content, sizeof(msg.content), stdin);
         msg.content[strcspn(msg.content, "\n")] = 0;  // 개행 문자 제거
 
