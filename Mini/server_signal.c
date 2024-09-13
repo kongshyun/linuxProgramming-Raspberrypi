@@ -168,7 +168,7 @@ void broadcast_message(Message *msg,int sender_pid) {
             printf("clieee\n");
             continue;
         }
-        if (write(pipe2[i][1], msg, sizeof(*msg)) == -1) {
+        if (write(pipe2[i][1], &msg, sizeof(msg)) == -1) {
             perror("write()");
             printf("errno: %d\n",errno);
         }else {
