@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 #define MAX_CLIENTS 10
@@ -60,6 +61,7 @@ void set_nonblocking_pipe(int pipefd[2]){
         exit(1);
     }
     
+
 }
 
 void setup_nonblocking_pipes(){
@@ -71,10 +73,10 @@ void setup_nonblocking_pipes(){
 
 // 자식 프로세스에서 메시지 처리 (클라이언트로부터 메시지 수신 후)
 void handle_client_message(int process_index, int csock) {
-    printf("핸들클라이언트 메시지!!");
+    printf("클라이언트 메시지처리중!!\n");
     Message msg;
 
-    signal(SIGUSR1,child_sigusr1_handler);
+    //signal(SIGUSR1,child_sigusr1_handler);
     while(1){
         memset(&msg, 0, sizeof(msg)); // 메시지 초기화
         int n = recv(csock, &msg, sizeof(msg), 0);
@@ -127,6 +129,8 @@ void broadcast_message(Message *msg,int sender_pid) {
         }
         if (write(pipe2[i][1], msg, sizeof(*msg)) == -1) {
             perror("write()");
+        }else {
+            printf(" 다른 자식에게 write() 성공!");
         }
         // SIGUSR1 신호를 자식 프로세스에게 전송
         if(kill(clients[i].pid, SIGUSR1)==-1){
@@ -138,15 +142,17 @@ void broadcast_message(Message *msg,int sender_pid) {
 }
 
 void parent_sigusr1_handler(int sig) {
-    Message msg;
 
     // 부모 프로세스일 경우 자식 프로세스로부터 메시지를 읽음
     for (int i = 0; i < client_count; i++) {
+        Message msg;
         int n = read(pipe1[i][0], &msg, sizeof(msg));
         if (n > 0) {
             printf("[PARENT] Received message from child [%s]: %s\n", msg.username, msg.content);
             // 받은 메시지를 다른 자식 프로세스에 브로드캐스트
             broadcast_message(&msg,clients[i].pid);
+        }else if (n ==-1 &&errno != EAGAIN && errno !=EWOULDBLOCK){
+            perror("read() from child");
         }
     }
 }
@@ -248,6 +254,7 @@ int main(int argc, char **argv)
             printf("자식프로세스 생성!! PID : %d \n",getpid());
             close(ssock); //자식 프로세스에서는 서버 소켓을 닫음
             int process_index = client_count;
+            signal(SIGUSR1,child_sigusr1_handler);
             handle_client_message(process_index,csock); 
             
             close(csock);/* 클라이언트 소켓을 닫음*/
