@@ -39,15 +39,18 @@ int pipe2[MAX_CLIENTS][2]; //부모 -> 자식
 void broadcast_message(Message *msg,int sender_pid);
 void child_sigusr1_handler(int sig);
 void parent_sigusr1_handler (int sig);
+
 void setup_pipes(){
     for(int i=0;i<MAX_CLIENTS;i++){
         if(pipe(pipe1[i])== -1 || pipe(pipe2[i])==-1){
             perror("pipe()");
             exit(1);
+        }else{
+            printf("Pipe 생성성공! pipe1[%d] , pipe2[%d]\n",i,i);
         }
     }
 }
-
+/*
 void set_nonblocking_pipe(int pipefd[2]){
     int flags;
     flags = fcntl(pipefd[0],F_GETFL,0);
@@ -62,6 +65,42 @@ void set_nonblocking_pipe(int pipefd[2]){
     }
     
 
+}
+*/
+void set_nonblocking_pipe(int pipefd[2]) {
+    int flags;
+
+    // 읽기 끝 비차단 모드 설정
+    flags = fcntl(pipefd[0], F_GETFL, 0);
+    if (flags == -1) {
+        perror("fcntl() for read end of pipe failed");
+        exit(1);
+    } else {
+        printf("읽기 파이프 파일 디스크립터 플래그: %d\n", flags);
+    }
+
+    if (fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK) == -1) {
+        perror("fcntl() setting non-blocking for read failed");
+        exit(1);
+    } else {
+        printf("읽기 파이프 비차단 모드 설정 성공\n");
+    }
+
+    // 쓰기 끝 비차단 모드 설정
+    flags = fcntl(pipefd[1], F_GETFL, 0);
+    if (flags == -1) {
+        perror("fcntl() for write end of pipe failed");
+        exit(1);
+    } else {
+        printf("쓰기 파이프 파일 디스크립터 플래그: %d\n", flags);
+    }
+
+    if (fcntl(pipefd[1], F_SETFL, flags | O_NONBLOCK) == -1) {
+        perror("fcntl() setting non-blocking for write failed");
+        exit(1);
+    } else {
+        printf("쓰기 파이프 비차단 모드 설정 성공\n");
+    }
 }
 
 void setup_nonblocking_pipes(){
