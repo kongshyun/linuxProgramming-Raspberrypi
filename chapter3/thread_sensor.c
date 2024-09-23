@@ -1,5 +1,4 @@
 #include <stdio.h>
-
 #include <wiringPi.h>
 #include <unistd.h>
 #include <fcntl.h>
