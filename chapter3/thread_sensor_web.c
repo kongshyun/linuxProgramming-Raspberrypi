@@ -7,12 +7,10 @@
 #include <softTone.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <signal.h>
-
-
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #define SW 5
 #define LED 1
@@ -21,6 +19,7 @@
 #define SPKR 6
 #define TOTAL 32
 #define MOTOR 2
+#define PORT 5000
 
 #define G 391 //솔
 #define A 440 //라
@@ -108,6 +107,7 @@ void *webserverFunction(void* arg)
     pthread_t thread;
     struct sockaddr_in servaddr, cliaddr;
     unsigned int len;
+i   char buffer[BUFSIZ];
 
     int port(int)(arg);
 
@@ -119,7 +119,8 @@ void *webserverFunction(void* arg)
     memset(&servaddr, 0,sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr=htonl(INADDR_ANY);
-    servaddr.sin_port = htons(port);
+    servaddr.sin_port = htons(PORT);
+
     if(bind(ssock, (struct sockaddr *)&servaddr, sizeof(servaddr))==-1){
         perror("bind()");
         exit(1);
@@ -130,21 +131,54 @@ void *webserverFunction(void* arg)
     }
 
     while(is_run){
-        char mesg[BUFSIZ];
+        //char mesg[BUFSIZ];
         int csock;
 
         len=sizeof(cliaddr);
         csock = accept(ssock, (struct sockaddr *)&cliaddr,&len);
         inet_ntop(AF_INET, &cliaddr.sin_addr, mesg, BUFSIZ);
 
-        printf("Client IP : %s:%d\n",mesg, ntohs(cliaddr.sin_port));
 
         pthread_create(&thread,NULL, clnt_connection, &csock);
+        int cdsValue = digitalRead(CDS);
+        char *cdsStatus=(cdsValue == LOW)? "Dark":"Bright";
 
+        sprintf(buffer,
+                "HTTP/1.1 200 OK\r\n"\
+                "Content-Type:text/html\r\n\r\n"\
+                "<html><body>"\
+                "<h1>Sensor status</h1>"\
+                "<p>CDS Sensor is : %s</p>"\
+                "</body></html<\r\n",cdsStatus);
+        //클라이언트에게 응답 전송
+        write(csock, buffer, strlen(buffer));
+        close(csock);
+        
     }
-    return 0;
+    close(ssock);
+    return NULL;
+}
+
+int sendData(FILE* fp, char *ct, char *filename)
+{
+    char server[ ] ="Server : Netscape-Enterprise/6.0\r\n";
+    char cnt_type[] = "Content-Type:text/html\r\n";
+    char end[]="\r\n";
+    char html[BUFSIZ];
+
 
 }
+
+void sendOk(FILE* fp)
+{
+
+}
+
+void sendError(FILE *fp)
+{
+
+}
+
 
 int main(int argc, char **argv)
 {
@@ -166,6 +200,7 @@ int main(int argc, char **argv)
     if(argc !=2) {
         printf("usage : %s <port>\n",argv[0]);
         return -1;
+
     }
     return 0;
 }
