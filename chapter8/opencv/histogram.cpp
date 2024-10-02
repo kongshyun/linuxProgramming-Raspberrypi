@@ -16,7 +16,6 @@ int main()
     Mat histImg1(histSize, histSize, CV_8U, Scalar(histSize));
     Mat histImg2(histSize, histSize, CV_8U, Scalar(histSize));
     image2 = image1+50;
-
     calcHist(&image1, 1, chan_nos,
             Mat(),
             hist,
@@ -26,7 +25,7 @@ int main()
     minMaxLoc(hist &minVal,&maxVal,0,0);
     int hpt=static_cast<int>(0.9 * histSize);
 
-    for(int h=0; histSize;h++){
+    for(int h=0;h<histSize;h++){
         float binVal = hist.at<float>(h);
         int intensity=static_cast<int>(binVal *hpt / maxVal);
         line(histImg1, Point(h, histSize),Point(h,histSize - intensity),

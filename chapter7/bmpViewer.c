@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/fb.h>
+#include <stdint.h>
 
 #include "bmpHeader.h"
 
@@ -52,7 +53,8 @@ int main(int argc, char **argv)
 
     pFbMap = (ubyte *) mmap(0,vinfo.xres * vinfo.yres * vinfo.bits_per_pixel/8, PROT_READ | PROT_WRITE, MAP_SHARED,fbfd,0);
 
-    if((unsigned)pFbMap == (unsigned)-1){
+    //if((unsigned)pFbMap == (unsigned)-1){
+    if((uintptr_t)pFbMap == (uintptr_t)-1){
         perror("mmap()");
         return -1;
     }
