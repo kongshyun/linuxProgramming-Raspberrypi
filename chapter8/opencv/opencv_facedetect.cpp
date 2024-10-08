@@ -12,7 +12,7 @@
 #include <opencv2/objdetect/objdetect.hpp>
 
 #define FBDEV 			  "/dev/fb0"
-#define CAMERA_COUNT 	100
+#define CAMERA_COUNT 	100 // 카메라 지속 시간
 #define CAM_WIDTH 		640
 #define CAM_HEIGHT 		480
 
@@ -20,15 +20,15 @@ using namespace cv;
 
 const static char* cascade_name =
 "/usr/share/opencv4/haarcascades//haarcascade_frontalface_alt.xml";
-
-
+typedef unsigned char ubyte;
 int main(int argc, char **argv)
 {
     int fbfd;
 
     /* 프레임 버퍼 정보 처리를 위한 구조체 */
     struct fb_var_screeninfo vinfo;
-    unsigned char *buffer, *pfbmap;
+    unsigned char *buffer;
+    unsigned short *pfbmap;//unsigned short 로 바꿔줌.
     unsigned int x, y, i, j, screensize;
     VideoCapture vc(0); /* 카메라를 위한 변수 */
     CascadeClassifier cascade;
@@ -54,8 +54,8 @@ int main(int argc, char **argv)
     }
 
     screensize = vinfo.xres* vinfo.yres *vinfo.bits_per_pixel/8.;
-    pfbmap= (unsigned char *) mmap(NULL, screensize, PROT_READ | PROT_WRITE, MAP_SHARED,fbfd,0);
-    if(pfbmap==(unsigned short*)-1) {
+    pfbmap= (unsigned short *) mmap(NULL, screensize, PROT_READ | PROT_WRITE, MAP_SHARED,fbfd,0); // unsigned short로 바꿔줌!!!
+    if(pfbmap==(unsigned short*)-1) { // unsigned short로 바꿔줌
 
         perror("mmap() : framebuffer device to memory");
         return EXIT_FAILURE;
@@ -87,15 +87,15 @@ int main(int argc, char **argv)
             for(x = 0; x < vinfo.xres; x++) {
                 /* 화면에서 이미지를 넘어서는 빈 공간을 처리한다. */
                 if(x >= frame.cols) {
-                    location+=colors;
+                    location++; // location++로 바꿔줌
                     continue;
                 }
+                ubyte b = *(buffer+(y*image.cols+x)*3+0);
+                ubyte g = *(buffer+(y*image.cols+x)*3+1);
+                ubyte r = *(buffer+(y*image.cols+x)*3+2);
 
-                pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+0);
-                pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+1);
-                pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+2);
-                pfbmap[location++] = 0xFF;
-            }
+                pfbmap[location++] = ((r>>3)<<11)|((g>>2)<<5)|(b>>3); 
+           }
         }
     }
     /*사용이 끝난 자원과 메모리를 해제한다.*/
