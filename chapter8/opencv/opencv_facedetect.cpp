@@ -55,7 +55,7 @@ int main(int argc, char **argv)
 
     screensize = vinfo.xres* vinfo.yres *vinfo.bits_per_pixel/8.;
     pfbmap= (unsigned char *) mmap(NULL, screensize, PROT_READ | PROT_WRITE, MAP_SHARED,fbfd,0);
-    if(pfbmap==MAP_) {
+    if(pfbmap==(unsigned short*)-1) {
 
         perror("mmap() : framebuffer device to memory");
         return EXIT_FAILURE;
@@ -92,7 +92,7 @@ int main(int argc, char **argv)
                 }
 
                 pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+0);
-                pfbmap[location++]= *(buffer+(y*frame.cols+x)*3+1);
+                pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+1);
                 pfbmap[location++] = *(buffer+(y*frame.cols+x)*3+2);
                 pfbmap[location++] = 0xFF;
             }
