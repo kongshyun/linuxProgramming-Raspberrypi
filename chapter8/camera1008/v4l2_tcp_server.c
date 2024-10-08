@@ -26,7 +26,7 @@
 #define VIDEODEV    "/dev/video0"
 #define WIDTH       800               /* 캡쳐받을 영상의 크기 */
 #define HEIGHT      600              
-
+#define BUFFER_COUNT 4
 #define TCP_PORT 5100 /*서버의 포트 번호*/
 
 typedef unsigned char ubyte;
@@ -41,6 +41,8 @@ struct buffer {
     size_t length;
 };
     
+static int cond =1;
+
 static short *fbp =NULL;
 struct buffer *buffers =NULL;
 static unsigned int n_buffers=0;
