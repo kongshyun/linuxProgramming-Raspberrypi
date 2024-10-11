@@ -3,6 +3,8 @@
 #include <linux/module.h>
 #include <linux/io.h> 			/* ioremap( ), iounmap( ) 커널 함수 */
 #include <linux/uaccess.h> 		/* copy_to_user( ), copy_from_user( ) 커널 함수 */
+#include <linux/gpio.h> 		/* GPIO 함수 */
+#include <linux/interrupt.h> 		/* 인터럽트 처리를 위한 헤더 파일 */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("YoungJin Suh");
@@ -30,9 +32,9 @@ MODULE_DESCRIPTION("Raspberry Pi GPIO LED Device Module");
 #define GPIO_MINOR 0
 #define GPIO_DEVICE "gpioled" 		/* 디바이스 디바이스 파일의 이름 */
 
-#define GPIO_LED 18 			/* LED 사용을 위한 GPIO의 번호 */
+#define GPIO_LED 589 			/* LED 사용을 위한 GPIO의 번호 */
+#define GPIO_SW 595		/* 스위치에 대한 GPIO의 번호 */
 
-volatile unsigned *gpio; 		/* I/O 접근을 위한 volatile 변수 */
 static char msg[BLOCK_SIZE] = {0}; 	/* write( ) 함수에서 읽은 데이터 저장 */
 
 /* 입출력 함수를 위한 선언 */
@@ -40,25 +42,6 @@ static int gpio_open(struct inode *, struct file *);
 static ssize_t gpio_read(struct file *, char *, size_t, loff_t *);
 static ssize_t gpio_write(struct file *, const char *, size_t, loff_t *);
 static int gpio_close(struct inode *, struct file *);
-typedef struct{
-    uint32_t status;
-    uint32_t ctrl;
-}GPIOregs;
-
-#define GPIO ((GPIOregs*)GPIOBase)
-
-typedef struct
-{
-    uint32_t Out;
-    uint32_t OE;
-    uint32_t In;
-    uint32_t InSync;
-} rioregs;
-
-#define rio ((rioregs *)RIOBase)
-#define rioXOR ((rioregs *)(RIOBase + 0x1000 / 4))
-#define rioSET ((rioregs *)(RIOBase + 0x2000 / 4))
-#define rioCLR ((rioregs *)(RIOBase + 0x3000 / 4))
 
 /* 유닉스 입출력 함수들의 처리를 위한 구조체 */
 static struct file_operations gpio_fops = {
@@ -70,12 +53,24 @@ static struct file_operations gpio_fops = {
 };
 
 struct cdev gpio_cdev;
+static int switch_irq;
+
+/* 인터럽트 처리를 위한 인터럽트 서비스 루틴(Interrupt Service Routine) */
+static irqreturn_t isr_func(int irq, void *data)
+{
+    if(irq == switch_irq && !gpio_get_value(GPIO_LED)) {
+        gpio_set_value(GPIO_LED, 1);
+    } else if(irq == switch_irq && gpio_get_value(GPIO_LED)) {
+        gpio_set_value(GPIO_LED, 0);
+    }
+
+    return IRQ_HANDLED;
+}
 
 int init_module(void)
 {
     dev_t devno;
     unsigned int count;
-    static void *map; 			/* I/O 접근을 위한 변수 */
     int err;
 
     printk(KERN_INFO "Hello module!\n");
@@ -99,17 +94,13 @@ int init_module(void)
     printk("'mknod /dev/%s c %d 0'\n", GPIO_DEVICE, GPIO_MAJOR);
     printk("'chmod 666 /dev/%s'\n", GPIO_DEVICE);
 
-    map = ioremap(GPIO_BASE, GPIO_SIZE); 		/* 사용할 메모리를 할당한다. */
-    if(!map) {
-        printk("Error : mapping GPIO memory\n");
-        iounmap(map);
-        return -EBUSY;
-    }
-
-    gpio = (volatile unsigned int *)map;
-
-    GPIO_IN(GPIO_LED); 					/* LED 사용을 위한 초기화 */
-    GPIO_OUT(GPIO_LED);
+    /* GPIO 사용을 요청한다. */
+    gpio_request(GPIO_LED, "LED");
+    gpio_direction_output(GPIO_LED, 0);
+    gpio_request(GPIO_SW, "SWITCH");
+    switch_irq = gpio_to_irq(GPIO_SW); 			/* GPIO 인터럽트 번호 획득 */
+    err = request_irq(switch_irq, isr_func, IRQF_TRIGGER_RISING,
+                      "switch", NULL); 			/* GPIO 인터럽트 핸들러 등록 */
 
     return 0;
 }
@@ -121,9 +112,14 @@ void cleanup_module(void)
 
     cdev_del(&gpio_cdev); 				/* 문자 디바이스의 구조체를 해제한다. */
 
-    if (gpio) {
-        iounmap(gpio); 					/* 매핑된 메모리를 삭제한다. */
-    }
+
+    /* 사용이 끝난 인터럽트 해제 */
+    free_irq(switch_irq, NULL);
+
+    /* 더 이상 사용이 필요 없는 경우 관련 자원을 해제한다. */
+    gpio_free(GPIO_LED);
+    gpio_free(GPIO_SW);
+   // gpio_direction_output(GPIO_LED, 0);
 
     module_put(THIS_MODULE);
 
@@ -165,12 +161,11 @@ static ssize_t gpio_write(struct file *inode, const char *buff, size_t len, loff
     memset(msg, 0, BLOCK_SIZE);
     count = copy_from_user(msg, buff, len); /* 사용자 영역으로부터 데이터를 가져온다. */
 
-    /* 사용자가 보낸 데이터가 0인 경우 LED를 끄고, 0이 아닌 경우 LED를 켠다. */
-    (!strcmp(msg, "0"))?GPIO_CLR(GPIO_LED):GPIO_SET(GPIO_LED);
+    /* LED를 설정한다. */
+    gpio_set_value(GPIO_LED, (!strcmp(msg, "0"))?0:1);
 
     printk("GPIO Device(%d) write : %s(%d)\n",
             MAJOR(inode->f_path.dentry->d_inode->i_rdev), msg, len);
 
     return count;
 }
-

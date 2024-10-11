@@ -1,1 +1,0 @@
-savedcmd_/home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/modules.order := {   echo /home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/gpio_module_kch.o; :; } > /home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/modules.order
