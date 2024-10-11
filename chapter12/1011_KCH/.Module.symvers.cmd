@@ -1,0 +1,1 @@
+savedcmd_/home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/Module.symvers -T /home/iam/Desktop/veda-raspberrypi/chapter12/1011_KCH/modules.order -i Module.symvers -e 
