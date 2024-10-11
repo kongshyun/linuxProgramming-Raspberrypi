@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-#if
+#if 0
 #define BCM_IO_BASE     0x20000000
 #define BCM_IO_BASE     0x3F000000
 #else 
@@ -43,7 +43,7 @@ int main(int argc, char **argv)
     gpio_map = mmap(NULL, GPIO_SIZE, PROT_READ | PROT_WRITE,
             MAP_SHARED, mem_fd, GPIO_BASE);
     if(gpio_map==MAP_FAILED) {
-        printf("[Error] mmap() : %d\n", (int)gpio_map);
+        printf("[Error] mmap() : %d\n", gpio_map);
         perror -1;
     }
 

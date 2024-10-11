@@ -1,6 +1,6 @@
 KDIR = /lib/modules/`uname -r`/build
 
-obj-m :=hello_module.o
+obj-m :=gpio_module.o
 
 default:
 	$(MAKE) -C $(KDIR) M=$$PWD modules
