@@ -1,1 +1,0 @@
-savedcmd_/home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/gpioirq_module.mod := printf '%s\n'   gpioirq_module.o | awk '!x[$$0]++ { print("/home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/"$$0) }' > /home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/gpioirq_module.mod

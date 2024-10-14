@@ -1,1 +1,0 @@
-savedcmd_/home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/Module.symvers -T /home/iam/Desktop/veda-raspberrypi/chapter12/GPIO_SWITCH/modules.order -i Module.symvers -e 

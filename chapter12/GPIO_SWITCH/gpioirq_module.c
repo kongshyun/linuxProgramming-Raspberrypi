@@ -73,8 +73,8 @@ int init_module(void)
     unsigned int count;
     int err;
 
-    printk(KERN_INFO "Hello module!\n");
-    try_module_get(THIS_MODULE);
+    printk(KERN_INFO "Hello module!\n"); // 커널에 메세지를 출력
+    try_module_get(THIS_MODULE); // 현재 모듈의 참조 카운터를 증가시킴.
 
     /* 문자 디바이스를 등록한다. */
     devno = MKDEV(GPIO_MAJOR, GPIO_MINOR);
@@ -98,6 +98,7 @@ int init_module(void)
     gpio_request(GPIO_LED, "LED");
     gpio_direction_output(GPIO_LED, 0);
     gpio_request(GPIO_SW, "SWITCH");
+    gpio_direction_input(GPIO_SW); //*****추가1!!!
     switch_irq = gpio_to_irq(GPIO_SW); 			/* GPIO 인터럽트 번호 획득 */
     err = request_irq(switch_irq, isr_func, IRQF_TRIGGER_RISING,
                       "switch", NULL); 			/* GPIO 인터럽트 핸들러 등록 */
