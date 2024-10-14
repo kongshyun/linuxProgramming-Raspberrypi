@@ -3,10 +3,14 @@
 #include <linux/module.h>
 #include <linux/io.h> 			/* ioremap( ), iounmap( ) 커널 함수 */
 #include <linux/uaccess.h> 		/* copy_to_user( ), copy_from_user( ) 커널 함수 */
-#include <linux/gpio.h>			/* GPIO 함수 */
+#include <linux/gpio.h> 		/* GPIO 함수 */
 #include <linux/interrupt.h> 		/* 인터럽트 처리를 위한 헤더 파일 */
-#include <linux/timer.h>
-#include <linux/mutex.h>
+#include <linux/timer.h> 		/* 타이머 기능의 사용을 위한 헤더 파일 */
+#include <linux/mutex.h> 		/* 뮤텍스의 사용을 위한 헤더 파일 */
+#include <linux/string.h> 		/* 문자열 분석을 위한 함수를 위한 헤더 파일 */
+#include <linux/sched.h> 		/* send_sig_info( ) 함수를 위한 헤더 파일 */
+#include <linux/sched/signal.h> 	/* 시그널 처리를 위한 헤더 파일 */
+//#include <asm/siginfo.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("YoungJin Suh");
@@ -34,10 +38,9 @@ MODULE_DESCRIPTION("Raspberry Pi GPIO LED Device Module");
 #define GPIO_MINOR 0
 #define GPIO_DEVICE "gpioled" 		/* 디바이스 디바이스 파일의 이름 */
 
-/* 디바이스 번호 : cat /sys/kernel/debug/gpio */
-#define GPIO_LED  589   //18 			/* LED 사용을 위한 GPIO의 번호 */
-#define GPIO_SW   595   //24 			/* 스위치에 대한 GPIO의 번호 */
-                        
+#define GPIO_LED 589//18 			/* LED 사용을 위한 GPIO의 번호 */
+#define GPIO_SW 595//24 			/* 스위치에 대한 GPIO의 번호 */
+
 static char msg[BLOCK_SIZE] = {0}; 	/* write( ) 함수에서 읽은 데이터 저장 */
 
 /* 입출력 함수를 위한 선언 */
@@ -57,30 +60,37 @@ static struct file_operations gpio_fops = {
 
 struct cdev gpio_cdev;
 static int switch_irq;
-static struct timer_list timer;
-static DEFINE_MUTEX(led_mutex);
+static struct timer_list timer; 	/* 타이머 처리를 위한 구조체 */
+static struct task_struct *task; 	/* 태스크를 위한 구조체 */
+static DEFINE_MUTEX(led_mutex); 	/* 충돌 방지를 위한 커널 뮤텍스 */
 
+/* 타이머 처리를 위한 함수 */
 static void timer_func(struct timer_list *t)
 {
-    if(mutex_trylock(&led_mutex) != 0){
-        static int ledflag = 1;
-        gpio_set_value(GPIO_LED, ledflag);
-        ledflag = !ledflag;
-        mutex_unlock(&led_mutex);
+    if(mutex_trylock(&led_mutex) != 0) { 	/* 뮤텍스를 이용한 충돌 처리 */
+        static int ledflag = 1;			/* LED의 점멸을 위한 정적 변수 */
+        gpio_set_value(GPIO_LED, ledflag); 	/* LED의 상태 설정 */
+        ledflag = !ledflag;			/* 변수의 값 토글링 */
+        mutex_unlock(&led_mutex);		
     }
 
+    /* 다음 실행을 위한 타이머 설정 */
     mod_timer(&timer, jiffies + (1*HZ));
 }
 
 /* 인터럽트 처리를 위한 인터럽트 서비스 루틴(Interrupt Service Routine) */
 static irqreturn_t isr_func(int irq, void *data)
 {
-    if(mutex_trylock(&led_mutex) != 0){
+    if(mutex_trylock(&led_mutex) != 0) { 	/* 뮤텍스를 이용한 충돌 처리 */
         if(irq == switch_irq && !gpio_get_value(GPIO_LED)) {
-            printk("Switch Off");
             gpio_set_value(GPIO_LED, 1);
         } else if(irq == switch_irq && gpio_get_value(GPIO_LED)) {
-            printk("Switch On");
+            /* 시그널 처리를 위한 구조체 등록 */
+            static struct kernel_siginfo sinfo; 	/* 시그널 처리를 위한 구조체 */
+            memset(&sinfo, 0, sizeof(struct kernel_siginfo));
+            sinfo.si_signo = SIGIO;
+            sinfo.si_code = SI_USER;
+            send_sig_info(SIGIO, &sinfo, task);	/* 해당 프로세스에 시그널 보내기 */
             gpio_set_value(GPIO_LED, 0);
         }
         mutex_unlock(&led_mutex);
@@ -96,7 +106,9 @@ int init_module(void)
     int err;
 
     printk(KERN_INFO "Hello module!\n");
-    mutex_init(&led_mutex);
+
+    mutex_init(&led_mutex); 		/* 뮤텍스를 초기화한다. */
+
     try_module_get(THIS_MODULE);
 
     /* 문자 디바이스를 등록한다. */
@@ -132,12 +144,13 @@ int init_module(void)
 void cleanup_module(void)
 {
     dev_t devno = MKDEV(GPIO_MAJOR, GPIO_MINOR);
-    
-    mutex_destroy(&led_mutex);
-    
+
+    mutex_destroy(&led_mutex); 				/* 뮤텍스를 해제한다. */
+
     unregister_chrdev_region(devno, 1); 		/* 문자 디바이스의 등록을 해제한다. */
 
     cdev_del(&gpio_cdev); 				/* 문자 디바이스의 구조체를 해제한다. */
+
 
     /* 사용이 끝난 인터럽트 해제 */
     free_irq(switch_irq, NULL);
@@ -145,7 +158,7 @@ void cleanup_module(void)
     /* 더 이상 사용이 필요 없는 경우 관련 자원을 해제한다. */
     gpio_free(GPIO_LED);
     gpio_free(GPIO_SW);
-    //gpio_direction_output(GPIO_LED, 0);
+   // gpio_direction_output(GPIO_LED, 0);
 
     module_put(THIS_MODULE);
 
@@ -183,24 +196,46 @@ static ssize_t gpio_read(struct file *inode, char *buff, size_t len, loff_t *off
 static ssize_t gpio_write(struct file *inode, const char *buff, size_t len, loff_t *off)
 {
     short count;
+    char *cmd, *str;
+    char *sep = ":";
+    char *endptr, *pidstr;
+    pid_t pid;
 
     memset(msg, 0, BLOCK_SIZE);
-    count = copy_from_user(msg, buff, len); /* 사용자 영역으로부터 데이터를 가져온다. */
+    count = copy_from_user(msg, buff, len); 	/* 사용자 영역으로부터 데이터를 가져온다. */
 
-    if(!strcmp(msg, "0")){
-        del_timer_sync(&timer);
+    /* write( ) 함수로부터 메시지(명령:PID)를 분석하여 명령과 PID로 분리 */
+    str = kstrdup(msg, GFP_KERNEL);
+    cmd = strsep(&str, sep);
+    pidstr = strsep(&str, sep);
+    printk("Command : %s, Pid : %s\n", cmd, pidstr);
+    cmd[1] = '\0';
+
+    if(!strcmp(cmd, "0")) {
+        del_timer_sync(&timer); 		/* 타이머 삭제 */
         gpio_set_value(GPIO_LED, 0);
     } else {
+        /* 타이머 초기화와 타이머 처리를 위한 함수 등록 */
         timer_setup(&timer, timer_func, 0);
 
+        /* timer_list 구조체 초기화 : 주기 1초 */
         timer.expires = jiffies + (1*HZ);
-        add_timer(&timer);
-    }
-    /* LED를 설정한다. */
-    // gpio_set_value(GPIO_LED, (!strcmp(msg, "0"))?0:1);
 
-    printk("GPIO Device(%d) write : %s(%ld)\n",
+        add_timer(&timer); 			/* 타이머 추가 */
+    }
+
+    printk("GPIO Device(%d) write : %s(%d)\n",
             MAJOR(inode->f_path.dentry->d_inode->i_rdev), msg, len);
+
+    /* 시그널 발생 시 보낼 프로세스 ID를 등록 */
+    pid = simple_strtol(pidstr, &endptr, 10);
+    if (endptr != NULL) {
+        task = pid_task(find_vpid(pid), PIDTYPE_PID);
+        if(task == NULL) {
+            printk("Error : Can't find PID from user application\n");
+            return 0;
+        }
+    }
 
     return count;
 }
